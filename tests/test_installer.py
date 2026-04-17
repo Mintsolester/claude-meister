@@ -350,6 +350,103 @@ def test_wiki_install():
     return failed == 0
 
 
+def test_claude_md():
+    """Test installer/claude_md.py with temp files."""
+    from installer.claude_md import setup_claude_md, remove_claude_md_block
+
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_home = tmpdir.replace("\\", "/")
+        paths = {
+            "home": tmp_home,
+            "runtime_path": f"{tmp_home}/.claude_runtime",
+            "memory_root": f"{tmp_home}/.claude_memory",
+            "claude_dir": f"{tmp_home}/.claude",
+            "wiki_path": f"{tmp_home}/.claude_wiki",
+            "repo_root": str(Path(__file__).parent.parent).replace("\\", "/"),
+        }
+        from installer.paths import build_substitutions
+        subs = build_substitutions(paths)
+
+        # Test 1: No CLAUDE.md exists — should create from template
+        claude_dir = Path(paths["claude_dir"])
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        claude_md = claude_dir / "CLAUDE.md"
+
+        result = setup_claude_md(paths, subs, mode="create")
+        if result["status"] == "success" and claude_md.exists():
+            print(f"  [PASS] Created CLAUDE.md from template")
+            passed += 1
+        else:
+            print(f"  [FAIL] Create failed: {result}")
+            failed += 1
+
+        # Check markers present
+        content = claude_md.read_text(encoding="utf-8")
+        if "<!-- RUNTIME:START -->" in content and "<!-- RUNTIME:END -->" in content:
+            print(f"  [PASS] Has start and end markers")
+            passed += 1
+        else:
+            print(f"  [FAIL] Missing markers")
+            failed += 1
+
+        # Check tokens resolved
+        if "{{" not in content:
+            print(f"  [PASS] All tokens resolved")
+            passed += 1
+        else:
+            print(f"  [FAIL] Unresolved tokens in CLAUDE.md")
+            failed += 1
+
+        # Check runtime path present
+        if paths["runtime_path"] in content:
+            print(f"  [PASS] Runtime path in CLAUDE.md")
+            passed += 1
+        else:
+            print(f"  [FAIL] Runtime path not found in CLAUDE.md")
+            failed += 1
+
+        # Test 2: Existing CLAUDE.md with custom content — append
+        claude_md.write_text("# My Custom Instructions\n\nDo things my way.\n", encoding="utf-8")
+        result = setup_claude_md(paths, subs, mode="append")
+        content = claude_md.read_text(encoding="utf-8")
+        if "My Custom Instructions" in content and "<!-- RUNTIME:START -->" in content:
+            print(f"  [PASS] Appended to existing, preserved custom content")
+            passed += 1
+        else:
+            print(f"  [FAIL] Append failed: custom={('My Custom' in content)}, markers={('RUNTIME:START' in content)}")
+            failed += 1
+
+        # Test 3: Remove runtime block
+        result = remove_claude_md_block(paths)
+        content = claude_md.read_text(encoding="utf-8")
+        if "<!-- RUNTIME:START -->" not in content and "My Custom Instructions" in content:
+            print(f"  [PASS] Removed runtime block, preserved custom content")
+            passed += 1
+        else:
+            print(f"  [FAIL] Remove failed")
+            failed += 1
+
+        # Test 4: Already has markers — update between them
+        claude_md.write_text(
+            "# My Stuff\n\n<!-- RUNTIME:START -->\nOLD BLOCK\n<!-- RUNTIME:END -->\n\n# More stuff\n",
+            encoding="utf-8"
+        )
+        result = setup_claude_md(paths, subs, mode="update")
+        content = claude_md.read_text(encoding="utf-8")
+        if "My Stuff" in content and "OLD BLOCK" not in content and "Prompt Architect" in content:
+            print(f"  [PASS] Updated between markers, preserved surrounding content")
+            passed += 1
+        else:
+            print(f"  [FAIL] Update between markers failed")
+            failed += 1
+
+    print(f"\n  CLAUDE.md: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  CLAUDE_MEISTER INSTALLER TESTS")
@@ -364,6 +461,8 @@ if __name__ == "__main__":
     results["memory_install"] = test_memory_install()
     print("\nRunning: wiki_install")
     results["wiki_install"] = test_wiki_install()
+    print("\nRunning: claude_md")
+    results["claude_md"] = test_claude_md()
 
     total_pass = sum(1 for v in results.values() if v)
     total_fail = sum(1 for v in results.values() if not v)
