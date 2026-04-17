@@ -268,6 +268,88 @@ def test_memory_install():
     return failed == 0
 
 
+def test_wiki_install():
+    """Test installer/wiki.py with a temp directory."""
+    from installer.wiki import install_wiki, remove_wiki
+
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_home = tmpdir.replace("\\", "/")
+        paths = {
+            "home": tmp_home,
+            "runtime_path": f"{tmp_home}/.claude_runtime",
+            "memory_root": f"{tmp_home}/.claude_memory",
+            "claude_dir": f"{tmp_home}/.claude",
+            "wiki_path": f"{tmp_home}/.claude_wiki",
+            "repo_root": str(Path(__file__).parent.parent).replace("\\", "/"),
+        }
+
+        # Need runtime config to exist for wiki_path injection
+        rt_config_dir = Path(paths["runtime_path"]) / "configs"
+        rt_config_dir.mkdir(parents=True, exist_ok=True)
+        (rt_config_dir / "runtime_config.json").write_text(json.dumps({
+            "version": "1.0", "runtime_path": paths["runtime_path"],
+            "memory_root": paths["memory_root"], "tools_dirs": [],
+            "wiki_path": "", "defaults": {}
+        }), encoding="utf-8")
+
+        result = install_wiki(paths)
+        if result["status"] == "success":
+            print(f"  [PASS] install_wiki succeeded")
+            passed += 1
+        else:
+            print(f"  [FAIL] install_wiki failed: {result}")
+            failed += 1
+
+        # Check key files exist
+        wiki_dir = Path(paths["wiki_path"])
+        for f in ["_hot.md", "index.md", "overview.md"]:
+            if (wiki_dir / f).exists():
+                print(f"  [PASS] Installed: {f}")
+                passed += 1
+            else:
+                print(f"  [FAIL] Missing: {f}")
+                failed += 1
+
+        # Check entities and concepts copied
+        if (wiki_dir / "entities").is_dir() and any((wiki_dir / "entities").iterdir()):
+            print(f"  [PASS] entities/ has files")
+            passed += 1
+        else:
+            print(f"  [FAIL] entities/ missing or empty")
+            failed += 1
+
+        if (wiki_dir / "concepts").is_dir() and any((wiki_dir / "concepts").iterdir()):
+            print(f"  [PASS] concepts/ has files")
+            passed += 1
+        else:
+            print(f"  [FAIL] concepts/ missing or empty")
+            failed += 1
+
+        # Check runtime_config.json updated with wiki_path
+        config = json.loads((rt_config_dir / "runtime_config.json").read_text(encoding="utf-8"))
+        if config.get("wiki_path") == paths["wiki_path"]:
+            print(f"  [PASS] runtime_config.json wiki_path set")
+            passed += 1
+        else:
+            print(f"  [FAIL] wiki_path not set in config: {config.get('wiki_path')}")
+            failed += 1
+
+        # Test removal
+        result = remove_wiki(paths, confirm=False)
+        if not wiki_dir.exists():
+            print(f"  [PASS] remove_wiki cleaned up")
+            passed += 1
+        else:
+            print(f"  [FAIL] remove_wiki did not clean up")
+            failed += 1
+
+    print(f"\n  Wiki Install: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  CLAUDE_MEISTER INSTALLER TESTS")
@@ -280,6 +362,8 @@ if __name__ == "__main__":
     results["runtime_install"] = test_runtime_install()
     print("\nRunning: memory_install")
     results["memory_install"] = test_memory_install()
+    print("\nRunning: wiki_install")
+    results["wiki_install"] = test_wiki_install()
 
     total_pass = sum(1 for v in results.values() if v)
     total_fail = sum(1 for v in results.values() if not v)
