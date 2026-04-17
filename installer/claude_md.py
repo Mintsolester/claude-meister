@@ -51,6 +51,8 @@ def setup_claude_md(paths: dict, substitutions: dict, mode: str = "auto") -> dic
         claude_dir.mkdir(parents=True, exist_ok=True)
 
         if mode == "create":
+            if claude_md.exists():
+                _backup(claude_md)
             template = full_template if full_template.exists() else block_template
             content = template.read_text(encoding="utf-8")
             content = apply_substitutions(content, substitutions)
