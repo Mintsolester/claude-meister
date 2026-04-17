@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "prepend_not_append": true,
+  "backup_before_modify": true,
+  "skip_if_already_injected": true,
+  "create_if_missing": true,
+  "excluded_dirs": [".git", "node_modules", ".venv", "__pycache__", ".tmp", "vendor", "dist", "build", ".next", ".nuxt", "target"],
+  "excluded_repos": [],
+  "max_scan_depth": 4,
+  "injection_notes": {
+    "prepend_not_append": "Runtime block goes at the TOP of CLAUDE.md so it's read first",
+    "backup_before_modify": "Always create a timestamped backup before changing any file",
+    "skip_if_already_injected": "Idempotent — if markers are present, don't inject again",
+    "create_if_missing": "If a repo has no CLAUDE.md, create one with just the runtime block"
+  }
+}
