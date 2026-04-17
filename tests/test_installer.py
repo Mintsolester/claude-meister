@@ -1,10 +1,8 @@
 """Tests for the Claude_Meister installer."""
 
-import json
 import os
 import platform
 import sys
-import tempfile
 from pathlib import Path
 
 # Add project root to path
