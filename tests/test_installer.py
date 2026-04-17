@@ -566,22 +566,22 @@ if __name__ == "__main__":
     print("=" * 60)
 
     results = {}
-    print("\nRunning: paths")
-    results["paths"] = test_paths()
-    print("\nRunning: runtime_install")
-    results["runtime_install"] = test_runtime_install()
-    print("\nRunning: memory_install")
-    results["memory_install"] = test_memory_install()
-    print("\nRunning: wiki_install")
-    results["wiki_install"] = test_wiki_install()
-    print("\nRunning: claude_md")
-    results["claude_md"] = test_claude_md()
-    print("\nRunning: mcp")
-    results["mcp"] = test_mcp()
-    print("\nRunning: verify")
-    results["verify"] = test_verify()
+    for name, func in [
+        ("paths", test_paths),
+        ("runtime_install", test_runtime_install),
+        ("memory_install", test_memory_install),
+        ("wiki_install", test_wiki_install),
+        ("claude_md", test_claude_md),
+        ("mcp", test_mcp),
+        ("verify", test_verify),
+    ]:
+        print(f"\nRunning: {name}")
+        results[name] = func()
 
     total_pass = sum(1 for v in results.values() if v)
     total_fail = sum(1 for v in results.values() if not v)
-    print(f"\nTOTAL: {total_pass} groups passed, {total_fail} groups failed")
+    print(f"\n{'=' * 60}")
+    print(f"  TOTAL: {total_pass} groups passed, {total_fail} groups failed")
+    print(f"  STATUS: {'ALL PASSED' if total_fail == 0 else 'SOME FAILED'}")
+    print(f"{'=' * 60}")
     sys.exit(0 if total_fail == 0 else 1)
