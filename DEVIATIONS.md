@@ -55,3 +55,13 @@ forward slashes (by project convention). Without normalization, an
 already-registered server would not be recognized and the installer would
 re-register or fail. Normalizing only the CLI-side string (not the
 project-controlled `expected_path`) keeps the change minimal.
+
+## Task 10 — `test_verify()` missing `install_wiki()` call
+
+**Plan (lines 2189-2250):** Test sets up runtime + memory + CLAUDE.md,
+then calls `run_verification(paths, install_mode="full")`.
+**Actual:** Added `install_wiki(paths)` to test setup (and its import).
+**Reason:** `install_mode="full"` triggers wiki checks in verify.py
+(plan lines 2332-2336), but the test setup never installed the wiki.
+3 wiki checks failed deterministically. The fix preserves plan intent
+(exercise full-mode verification) rather than weakening the test.

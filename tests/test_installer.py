@@ -496,6 +496,70 @@ def test_mcp():
     return failed == 0
 
 
+def test_verify():
+    """Test installer/verify.py with a simulated installation."""
+    from installer.paths import build_substitutions
+    from installer.runtime import install_runtime
+    from installer.memory import install_memory
+    from installer.wiki import install_wiki
+    from installer.verify import run_verification
+
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_home = tmpdir.replace("\\", "/")
+        paths = {
+            "home": tmp_home,
+            "runtime_path": f"{tmp_home}/.claude_runtime",
+            "memory_root": f"{tmp_home}/.claude_memory",
+            "claude_dir": f"{tmp_home}/.claude",
+            "wiki_path": f"{tmp_home}/.claude_wiki",
+            "repo_root": str(Path(__file__).parent.parent).replace("\\", "/"),
+        }
+        subs = build_substitutions(paths)
+
+        # Install runtime + memory + wiki
+        install_runtime(paths, subs)
+        install_memory(paths)
+        install_wiki(paths)
+
+        # Create CLAUDE.md with markers
+        claude_dir = Path(paths["claude_dir"])
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        (claude_dir / "CLAUDE.md").write_text(
+            "<!-- RUNTIME:START -->\ntest\n<!-- RUNTIME:END -->\n", encoding="utf-8"
+        )
+
+        results = run_verification(paths, install_mode="full")
+
+        if "checks" in results:
+            print(f"  [PASS] Verification returned checks")
+            passed += 1
+        else:
+            print(f"  [FAIL] No checks in results: {results}")
+            failed += 1
+
+        if results.get("passed", 0) > 0:
+            print(f"  [PASS] Some checks passed: {results['passed']}")
+            passed += 1
+        else:
+            print(f"  [FAIL] No checks passed")
+            failed += 1
+
+        # Print individual check results
+        for check in results.get("checks", []):
+            status = "PASS" if check["passed"] else "FAIL"
+            print(f"  [{status}] verify: {check['name']}")
+            if check["passed"]:
+                passed += 1
+            else:
+                failed += 1
+
+    print(f"\n  Verify: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  CLAUDE_MEISTER INSTALLER TESTS")
@@ -514,6 +578,8 @@ if __name__ == "__main__":
     results["claude_md"] = test_claude_md()
     print("\nRunning: mcp")
     results["mcp"] = test_mcp()
+    print("\nRunning: verify")
+    results["verify"] = test_verify()
 
     total_pass = sum(1 for v in results.values() if v)
     total_fail = sum(1 for v in results.values() if not v)
