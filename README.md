@@ -429,14 +429,14 @@ After installation, files live here:
 
 ## Configuration
 
-Your configuration lives at `~/.claude_runtime/configs/runtime_config.json`. After installation it looks like this:
+Your configuration lives at `~/.claude_runtime/configs/runtime_config.json`. After installation it looks like this (paths shown for each platform):
 
 ```json
 {
   "version": "1.0",
-  "runtime_path": "/home/yourname/.claude_runtime",
-  "memory_root": "/home/yourname/.claude_memory",
-  "memory_server_modules": "/home/yourname/.claude_memory/server",
+  "runtime_path": "C:/Users/yourname/.claude_runtime",
+  "memory_root": "C:/Users/yourname/.claude_memory",
+  "memory_server_modules": "C:/Users/yourname/.claude_memory/server",
   "tools_dirs": [],
   "wiki_path": "",
   "defaults": {
@@ -446,6 +446,8 @@ Your configuration lives at `~/.claude_runtime/configs/runtime_config.json`. Aft
   }
 }
 ```
+
+> On macOS/Linux, paths use `/home/yourname/` or `/Users/yourname/` instead of `C:/Users/yourname/`. The installer fills these in automatically.
 
 ### Field Reference
 

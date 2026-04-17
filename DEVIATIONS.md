@@ -65,3 +65,27 @@ then calls `run_verification(paths, install_mode="full")`.
 (plan lines 2332-2336), but the test setup never installed the wiki.
 3 wiki checks failed deterministically. The fix preserves plan intent
 (exercise full-mode verification) rather than weakening the test.
+
+## Task 12 — GitHub URL placeholder in README.md
+
+**Plan (lines 2872-2886):** README must be comprehensive with accurate
+commands.
+**Actual:** README uses `https://github.com/Mintsolester/claude-meister.git`
+as the clone URL in three places (Quick Start, Detailed Installation,
+Contributing). This is a placeholder — the real remote has not been
+set on the local repo.
+**Reason:** The repository is local-only at this point. The URL is a
+plausible guess based on the git user's name. Before publishing, the
+user must either (a) create the repo at that exact URL, or (b) global
+search-and-replace the URL in README.md to the actual remote.
+
+## Task 12 — README Windows-first path example
+
+**Plan (line 2878):** Documents `runtime_config.json` fields.
+**Actual:** Configuration section's example config uses Windows paths
+(`C:/Users/yourname/...`) rather than Unix paths, with a note below
+showing the macOS/Linux variant.
+**Reason:** Windows is the primary target platform (per spec). The
+initial draft showed Unix paths, which would confuse the majority of
+users. The note below preserves cross-platform clarity without burying
+the lede for the main audience.
