@@ -185,6 +185,89 @@ def test_runtime_install():
     return failed == 0
 
 
+def test_memory_install():
+    """Test installer/memory.py with a temp directory."""
+    from installer.memory import install_memory, check_dependencies, remove_memory
+
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_home = tmpdir.replace("\\", "/")
+        paths = {
+            "home": tmp_home,
+            "runtime_path": f"{tmp_home}/.claude_runtime",
+            "memory_root": f"{tmp_home}/.claude_memory",
+            "claude_dir": f"{tmp_home}/.claude",
+            "wiki_path": f"{tmp_home}/.claude_wiki",
+            "repo_root": str(Path(__file__).parent.parent).replace("\\", "/"),
+        }
+
+        result = install_memory(paths)
+        if result["status"] == "success":
+            print(f"  [PASS] install_memory succeeded")
+            passed += 1
+        else:
+            print(f"  [FAIL] install_memory failed: {result}")
+            failed += 1
+
+        # Check server files exist
+        server_dir = Path(paths["memory_root"]) / "server"
+        expected = ["main.py", "memory_store.py", "memory_retriever.py",
+                    "memory_scorer.py", "evolution_engine.py", "debate_engine.py",
+                    "cleanup.py", "repo_detector.py"]
+        for f in expected:
+            if (server_dir / f).exists():
+                print(f"  [PASS] Installed: server/{f}")
+                passed += 1
+            else:
+                print(f"  [FAIL] Missing: server/{f}")
+                failed += 1
+
+        # Check index.json created
+        index_path = Path(paths["memory_root"]) / "index.json"
+        if index_path.exists():
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                print(f"  [PASS] index.json initialized as list")
+                passed += 1
+            else:
+                print(f"  [FAIL] index.json not a list: {type(data)}")
+                failed += 1
+        else:
+            print(f"  [FAIL] index.json not created")
+            failed += 1
+
+        # Test removal (keep data)
+        result = remove_memory(paths, confirm=False, keep_data=True)
+        if not (server_dir / "main.py").exists():
+            print(f"  [PASS] Server files removed")
+            passed += 1
+        else:
+            print(f"  [FAIL] Server files not removed")
+            failed += 1
+
+        # index.json should be preserved when keep_data=True
+        if index_path.exists():
+            print(f"  [PASS] index.json preserved")
+            passed += 1
+        else:
+            print(f"  [FAIL] index.json was deleted")
+            failed += 1
+
+    # Dependency check (always runs, may warn)
+    deps = check_dependencies()
+    if "mcp" in deps and "fastmcp" in deps:
+        print(f"  [PASS] check_dependencies returns status for both packages")
+        passed += 1
+    else:
+        print(f"  [FAIL] check_dependencies incomplete: {deps}")
+        failed += 1
+
+    print(f"\n  Memory Install: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  CLAUDE_MEISTER INSTALLER TESTS")
@@ -195,6 +278,8 @@ if __name__ == "__main__":
     results["paths"] = test_paths()
     print("\nRunning: runtime_install")
     results["runtime_install"] = test_runtime_install()
+    print("\nRunning: memory_install")
+    results["memory_install"] = test_memory_install()
 
     total_pass = sum(1 for v in results.values() if v)
     total_fail = sum(1 for v in results.values() if not v)
