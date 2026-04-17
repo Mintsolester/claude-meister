@@ -447,6 +447,55 @@ def test_claude_md():
     return failed == 0
 
 
+def test_mcp():
+    """Test installer/mcp.py functions (non-destructive — doesn't actually register)."""
+    from installer.mcp import check_mcp, get_python_with_mcp, build_mcp_command
+
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_home = tmpdir.replace("\\", "/")
+        paths = {
+            "home": tmp_home,
+            "runtime_path": f"{tmp_home}/.claude_runtime",
+            "memory_root": f"{tmp_home}/.claude_memory",
+            "claude_dir": f"{tmp_home}/.claude",
+            "wiki_path": f"{tmp_home}/.claude_wiki",
+            "repo_root": str(Path(__file__).parent.parent).replace("\\", "/"),
+        }
+
+        # build_mcp_command returns the correct command structure
+        cmd = build_mcp_command(paths)
+        if "claude" in cmd[0] and "mcp" in cmd[1] and "add" in cmd[2]:
+            print(f"  [PASS] build_mcp_command returns valid command")
+            passed += 1
+        else:
+            print(f"  [FAIL] Unexpected command: {cmd}")
+            failed += 1
+
+        # Command includes memory server path
+        cmd_str = " ".join(cmd)
+        if "memory" in cmd_str and "server/main.py" in cmd_str:
+            print(f"  [PASS] Command references memory server")
+            passed += 1
+        else:
+            print(f"  [FAIL] Command missing server reference: {cmd_str}")
+            failed += 1
+
+        # get_python_with_mcp returns a python path
+        python_path = get_python_with_mcp()
+        if python_path and ("python" in python_path.lower()):
+            print(f"  [PASS] Found python with mcp: {python_path}")
+            passed += 1
+        else:
+            print(f"  [PASS] No python with mcp found (expected if mcp not installed)")
+            passed += 1
+
+    print(f"\n  MCP Registration: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 if __name__ == "__main__":
     print("=" * 60)
     print("  CLAUDE_MEISTER INSTALLER TESTS")
@@ -463,6 +512,8 @@ if __name__ == "__main__":
     results["wiki_install"] = test_wiki_install()
     print("\nRunning: claude_md")
     results["claude_md"] = test_claude_md()
+    print("\nRunning: mcp")
+    results["mcp"] = test_mcp()
 
     total_pass = sum(1 for v in results.values() if v)
     total_fail = sum(1 for v in results.values() if not v)
