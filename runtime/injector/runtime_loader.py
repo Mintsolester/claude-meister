@@ -208,7 +208,7 @@ def build_load_plan(mode: str, task: str, repo: str, working_dir: str) -> dict:
 
     # Advisor (DEEP mode only, and only on non-Opus models)
     if signals["needs_advisor"] and mode == "DEEP":
-        advisor_path = config.get("tools_dirs", ["<local>/Agentic_Workflows/tools/"])[0]
+        advisor_path = config.get("tools_dirs", [""])[0]
         plan["load"].append("advisor")
         plan["commands"].append(f'python "{advisor_path}advisor.py" -p "{task[:80]}"')
     else:

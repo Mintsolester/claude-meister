@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "runtime_path": "{{RUNTIME_PATH}}",
+  "memory_root": "{{MEMORY_ROOT}}",
+  "memory_server_modules": "{{MEMORY_ROOT}}/server",
+  "tools_dirs": [],
+  "wiki_path": "",
+  "defaults": {
+    "memory_max_tokens": 500,
+    "mode": "STANDARD",
+    "log_usage": true
+  }
+}
