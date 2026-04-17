@@ -28,7 +28,8 @@ def register_mcp(paths: dict) -> dict:
     if existing.get("registered"):
         current_path = existing.get("path", "")
         expected_path = f"{paths['memory_root']}/server/main.py"
-        if expected_path in current_path:
+        # Normalize separators for cross-platform comparison (CLI may emit backslashes on Windows)
+        if expected_path in current_path.replace("\\", "/"):
             return {"status": "skipped", "message": "Memory MCP server already registered with correct path."}
         else:
             return {
