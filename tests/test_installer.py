@@ -447,6 +447,85 @@ def test_claude_md():
     return failed == 0
 
 
+def test_update_claude_md():
+    """Test that --update refreshes CLAUDE.md runtime block only when markers exist."""
+    from installer.claude_md import setup_claude_md, check_claude_md
+    from installer.paths import build_substitutions
+
+    passed = 0
+    failed = 0
+
+    # Replicates the branch logic in do_update() step [4/4].
+    def refresh_step(paths, subs):
+        state = check_claude_md(paths)
+        if not state["exists"]:
+            return ("skipped_missing", None)
+        if not state["has_markers"]:
+            return ("skipped_no_markers", None)
+        return ("refreshed", setup_claude_md(paths, subs, mode="update"))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_home = tmpdir.replace("\\", "/")
+        paths = {
+            "home": tmp_home,
+            "runtime_path": f"{tmp_home}/.claude_runtime",
+            "memory_root": f"{tmp_home}/.claude_memory",
+            "claude_dir": f"{tmp_home}/.claude",
+            "wiki_path": f"{tmp_home}/.claude_wiki",
+            "repo_root": str(Path(__file__).parent.parent).replace("\\", "/"),
+        }
+        subs = build_substitutions(paths)
+        claude_dir = Path(paths["claude_dir"])
+        claude_dir.mkdir(parents=True, exist_ok=True)
+        claude_md = claude_dir / "CLAUDE.md"
+
+        # Case 1: no CLAUDE.md -> skip, do not create
+        action, _ = refresh_step(paths, subs)
+        if action == "skipped_missing" and not claude_md.exists():
+            print(f"  [PASS] No CLAUDE.md: update skips without creating")
+            passed += 1
+        else:
+            print(f"  [FAIL] Missing-file case: action={action}, exists={claude_md.exists()}")
+            failed += 1
+
+        # Case 2: CLAUDE.md without markers -> skip, do not inject
+        custom_content = "# My Personal Notes\n\nJust my stuff, no runtime.\n"
+        claude_md.write_text(custom_content, encoding="utf-8")
+        action, _ = refresh_step(paths, subs)
+        if action == "skipped_no_markers" and claude_md.read_text(encoding="utf-8") == custom_content:
+            print(f"  [PASS] No markers: update preserves custom CLAUDE.md untouched")
+            passed += 1
+        else:
+            print(f"  [FAIL] No-markers case: action={action}, content preserved={claude_md.read_text(encoding='utf-8') == custom_content}")
+            failed += 1
+
+        # Case 3: CLAUDE.md with markers and stale block -> refresh between markers
+        claude_md.write_text(
+            "# My Notes\n\n<!-- RUNTIME:START -->\nSTALE_RUNTIME_CONTENT\n<!-- RUNTIME:END -->\n\n# Tail\n",
+            encoding="utf-8"
+        )
+        action, result = refresh_step(paths, subs)
+        content = claude_md.read_text(encoding="utf-8")
+        if action == "refreshed" and "STALE_RUNTIME_CONTENT" not in content and "Prompt Architect" in content and "My Notes" in content:
+            print(f"  [PASS] Has markers: update refreshed block, preserved surrounding content")
+            passed += 1
+        else:
+            print(f"  [FAIL] Refresh case: action={action}, stale gone={'STALE_RUNTIME_CONTENT' not in content}, new injected={'Prompt Architect' in content}, tail kept={'My Notes' in content}")
+            failed += 1
+
+        # Case 3 (continued): backup was created
+        backups = list(claude_dir.glob("CLAUDE.md.backup.*"))
+        if len(backups) >= 1:
+            print(f"  [PASS] Refresh created backup ({len(backups)} found)")
+            passed += 1
+        else:
+            print(f"  [FAIL] No backup created during refresh")
+            failed += 1
+
+    print(f"\n  Update CLAUDE.md: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 def test_mcp():
     """Test installer/mcp.py functions (non-destructive — doesn't actually register)."""
     from installer.mcp import check_mcp, get_python_with_mcp, build_mcp_command
@@ -572,6 +651,7 @@ if __name__ == "__main__":
         ("memory_install", test_memory_install),
         ("wiki_install", test_wiki_install),
         ("claude_md", test_claude_md),
+        ("update_claude_md", test_update_claude_md),
         ("mcp", test_mcp),
         ("verify", test_verify),
     ]:

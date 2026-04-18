@@ -211,17 +211,27 @@ def do_update(paths: dict):
     print("\n  Updating...\n")
     subs = build_substitutions(paths)
 
-    print("  [1/3] Updating runtime...")
+    print("  [1/4] Updating runtime...")
     result = update_runtime(paths, subs)
     print(f"         {result['message']}")
 
-    print("  [2/3] Updating memory server...")
+    print("  [2/4] Updating memory server...")
     result = update_memory(paths)
     print(f"         {result['message']}")
 
-    print("  [3/3] Updating wiki...")
+    print("  [3/4] Updating wiki...")
     result = update_wiki(paths)
     print(f"         {result['message']}")
+
+    print("  [4/4] Refreshing CLAUDE.md runtime block...")
+    state = check_claude_md(paths)
+    if not state["exists"]:
+        print("         Skipped: CLAUDE.md does not exist. Run --full to create it.")
+    elif not state["has_markers"]:
+        print("         Skipped: no runtime block found. Run --full to inject one.")
+    else:
+        result = setup_claude_md(paths, subs, mode="update")
+        print(f"         {result['message']}")
 
     print("\n  Update complete. Config, logs, and memories preserved.")
 
