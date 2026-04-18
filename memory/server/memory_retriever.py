@@ -7,13 +7,20 @@ from collections import Counter
 from pathlib import Path
 
 from repo_detector import MEMORY_ROOT, ensure_local_memory
-from memory_scorer import composite_score, record_access, estimate_tokens
+from memory_scorer import composite_score, record_access, estimate_tokens, compute_tier
 from intent_classifier import classify_intent
+from failure_registry import find_similar_failures, summarize_for_avoidance
 
 INDEX_PATH = MEMORY_ROOT / "index.json"
 GLOBAL_PATTERNS_DIR = MEMORY_ROOT / "global_patterns"
 
 INTENT_MATCH_BOOST = 1.15  # Multiplicative bump when query and entry share a non-general intent
+
+# Tier priority multipliers applied on top of composite_score.
+# Hot entries float to the top, warm stays neutral, cold is heavily deprioritized
+# but still eligible when the query strongly matches (high relevance_score wins).
+TIER_MULTIPLIER = {"hot": 1.25, "warm": 1.0, "cold": 0.5}
+COLD_TIER_MIN_RELEVANCE = 40.0  # Cold entries only included if TF-IDF/tag score clears this
 
 
 def _load_index() -> list:
@@ -163,7 +170,8 @@ def retrieve(
             # Combined relevance: TF-IDF on content + tag matching
             tfidf = _tfidf_score(query, entry.get("content", ""))
             tag_score = _tag_match_score(query, entry.get("tags", []))
-            entry["relevance_score"] = min(100, tfidf * 0.7 + tag_score * 0.3)
+            relevance = min(100, tfidf * 0.7 + tag_score * 0.3)
+            entry["relevance_score"] = relevance
 
             # Lazy intent backfill: classify from content once, persist on first access.
             entry_intent = entry.get("intent")
@@ -171,12 +179,23 @@ def retrieve(
                 entry_intent = classify_intent(entry.get("content", ""))
                 entry["intent"] = entry_intent
 
+            # Lazy tier backfill: compute from age/freq if missing, persist.
+            tier = entry.get("tier")
+            if tier not in ("hot", "warm", "cold"):
+                tier = compute_tier(entry)
+                entry["tier"] = tier
+
+            # Cold entries only make it through if the query actually matches them.
+            if tier == "cold" and relevance < COLD_TIER_MIN_RELEVANCE:
+                continue
+
             score = composite_score(entry)
             if (
                 query_intent != "general"
                 and entry_intent == query_intent
             ):
                 score *= INTENT_MATCH_BOOST
+            score *= TIER_MULTIPLIER.get(tier, 1.0)
             scored.append((score, entry))
 
         # Sort by score descending
@@ -206,6 +225,7 @@ def retrieve(
                 "type": entry["type"],
                 "content": content,
                 "score": round(score, 2),
+                "tier": entry.get("tier", "warm"),
             })
             used_tokens += entry_tokens
 
@@ -232,10 +252,21 @@ def retrieve(
         memories.append({"id": "local:recent", "type": "recent_sessions", "content": recent_text, "score": 95})
     memories.extend(global_entries)
 
+    # --- Layer 3: Failure pattern registry ---
+    avoid = []
+    try:
+        similar = find_similar_failures(query=query, repo=repo, query_intent=query_intent, limit=3)
+        if similar:
+            avoid = summarize_for_avoidance(similar)
+            sources.append("registry:failures")
+    except Exception:
+        avoid = []
+
     return {
         "memories": memories,
         "token_count": used_tokens,
         "sources": sources,
+        "avoid": avoid,
     }
 
 

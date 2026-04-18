@@ -66,4 +66,55 @@ def record_access(entry: dict) -> dict:
     entry["decay_factor"] = max(0.0, entry.get("decay_factor", 0.0) - 0.1)
     entry["frequency"] = entry.get("frequency", 0) + 1
     entry["last_used"] = datetime.now(timezone.utc).isoformat()
+    entry["tier"] = compute_tier(entry)
     return entry
+
+
+# Tiering thresholds — tuned to match the Phase 3.3 plan.
+TIER_HOT_MIN_FREQUENCY = 5
+TIER_HOT_MIN_SUCCESS_RATE = 0.8
+TIER_WARM_DEMOTE_DAYS = 60
+TIER_COLD_DEMOTE_DAYS = 180
+
+VALID_TIERS = ("hot", "warm", "cold")
+
+
+def _days_since(timestamp: str) -> float:
+    try:
+        last = datetime.fromisoformat(timestamp)
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return max(0.0, (datetime.now(timezone.utc) - last).total_seconds() / 86400.0)
+    except Exception:
+        return 0.0
+
+
+def compute_tier(entry: dict) -> str:
+    """Assign a tier based on the plan's promotion/demotion rules.
+
+    Demotion wins over promotion: a frequently-used but long-abandoned
+    entry drops to cold (or at least warm) so retrieval doesn't keep
+    surfacing stale-but-popular records.
+
+    - days > 180 → cold
+    - days > 60 → warm (demotion)
+    - frequency >= 5 AND (success_rate is None or >= 0.8) → hot
+    - else → warm (default for new entries)
+
+    success_rate=None (never finalized) does not block promotion — it's
+    treated as "unproven but not failed".
+    """
+    last_used = entry.get("last_used") or entry.get("created") or ""
+    days = _days_since(last_used) if last_used else 0.0
+
+    if days > TIER_COLD_DEMOTE_DAYS:
+        return "cold"
+    if days > TIER_WARM_DEMOTE_DAYS:
+        return "warm"
+
+    freq = int(entry.get("frequency", 0) or 0)
+    sr = entry.get("success_rate")
+    if freq >= TIER_HOT_MIN_FREQUENCY and (sr is None or sr >= TIER_HOT_MIN_SUCCESS_RATE):
+        return "hot"
+
+    return "warm"

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from repo_detector import MEMORY_ROOT, ensure_repo_dirs
+from failure_registry import register_failure
 
 EVOLUTION_LOG = MEMORY_ROOT / "evolution_log.json"
 
@@ -88,6 +89,17 @@ def record_outcome(
         # Write signal to evolution directory
         signal_path = repo_path / "evolution" / f"{signal['id']}.json"
         signal_path.write_text(json.dumps(signal, indent=2), encoding="utf-8")
+
+        # Mirror into the cross-repo failure registry so future retrievals can warn us
+        try:
+            register_failure(
+                repo=repo,
+                failure_type=failure_type,
+                error_analysis=error_analysis,
+                note=recommendation,
+            )
+        except Exception:
+            pass
     else:
         signals.append({
             "confidence_adjustment": 0.1,

@@ -177,6 +177,7 @@ def memory_status() -> dict:
     repos_info = {}
     total_entries = 0
     total_size = 0
+    tier_totals = {"hot": 0, "warm": 0, "cold": 0, "untiered": 0}
 
     if repos_dir.exists():
         for repo_path in repos_dir.iterdir():
@@ -184,13 +185,25 @@ def memory_status() -> dict:
                 continue
             count = 0
             size = 0
+            tiers = {"hot": 0, "warm": 0, "cold": 0, "untiered": 0}
             for type_dir in ["sessions", "decisions", "patterns", "structure", "outcomes", "evolution"]:
                 td = repo_path / type_dir
                 if td.exists():
                     for f in td.glob("*.json"):
                         count += 1
                         size += f.stat().st_size
-            repos_info[repo_path.name] = {"entries": count, "size_kb": round(size / 1024, 1)}
+                        try:
+                            tier = json.loads(f.read_text(encoding="utf-8")).get("tier")
+                        except Exception:
+                            tier = None
+                        bucket = tier if tier in ("hot", "warm", "cold") else "untiered"
+                        tiers[bucket] += 1
+                        tier_totals[bucket] += 1
+            repos_info[repo_path.name] = {
+                "entries": count,
+                "size_kb": round(size / 1024, 1),
+                "tiers": tiers,
+            }
             total_entries += count
             total_size += size
 
@@ -221,6 +234,7 @@ def memory_status() -> dict:
         "global_patterns": gp_count,
         "total_entries": total_entries,
         "total_size_kb": round(total_size / 1024, 1),
+        "tier_distribution": tier_totals,
         "last_cleanup": last_cleanup,
         "pending_evolution_signals": pending_signals,
     }

@@ -12,7 +12,13 @@ START_MARKER = "<!-- RUNTIME:START -->"
 END_MARKER = "<!-- RUNTIME:END -->"
 
 
-def setup_claude_md(paths: dict, substitutions: dict, mode: str = "auto") -> dict:
+def setup_claude_md(
+    paths: dict,
+    substitutions: dict,
+    mode: str = "auto",
+    target_override: Path | None = None,
+    block_variant: str = "full",
+) -> dict:
     """Set up CLAUDE.md with the runtime block.
 
     Args:
@@ -20,16 +26,26 @@ def setup_claude_md(paths: dict, substitutions: dict, mode: str = "auto") -> dic
         substitutions: from build_substitutions()
         mode: 'auto' (detect), 'create' (new file), 'append' (add to existing),
               'update' (replace between markers), 'skip' (do nothing)
+        target_override: if set, write to this file instead of ~/.claude/CLAUDE.md
+        block_variant: 'full' (default) or 'minimal' — selects which block template to use
 
     Returns:
         dict with 'status', 'action', 'message'
     """
     claude_dir = Path(paths["claude_dir"])
-    claude_md = claude_dir / "CLAUDE.md"
+    if target_override is not None:
+        claude_md = Path(target_override)
+        claude_dir = claude_md.parent
+    else:
+        claude_md = claude_dir / "CLAUDE.md"
     repo_root = Path(paths["repo_root"])
 
     # Load the template block
-    block_template = repo_root / "templates" / "claude_md_block.md"
+    block_name = "claude_md_block_minimal.md" if block_variant == "minimal" else "claude_md_block.md"
+    block_template = repo_root / "templates" / block_name
+    # Fall back to the standard block if the minimal one doesn't exist
+    if block_variant == "minimal" and not block_template.exists():
+        block_template = repo_root / "templates" / "claude_md_block.md"
     full_template = repo_root / "templates" / "claude_md_full.md"
 
     if not block_template.exists() and not full_template.exists():
@@ -53,12 +69,20 @@ def setup_claude_md(paths: dict, substitutions: dict, mode: str = "auto") -> dic
         if mode == "create":
             if claude_md.exists():
                 _backup(claude_md)
-            template = full_template if full_template.exists() else block_template
+            # Per-repo injections (target_override set) and minimal variants get just the block.
+            # The full Prompt Architect template is reserved for the default global CLAUDE.md create.
+            use_full = (
+                target_override is None
+                and block_variant != "minimal"
+                and full_template.exists()
+            )
+            template = full_template if use_full else block_template
             content = template.read_text(encoding="utf-8")
             content = apply_substitutions(content, substitutions)
             claude_md.write_text(content, encoding="utf-8")
+            label = "full Prompt Architect + runtime block" if use_full else f"{block_variant} runtime block"
             return {"status": "success", "action": "created",
-                    "message": f"Created {claude_md} with full Prompt Architect + runtime block"}
+                    "message": f"Created {claude_md} with {label}"}
 
         elif mode == "append":
             # Backup first

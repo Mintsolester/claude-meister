@@ -206,6 +206,33 @@ def do_install(paths: dict, mode: str):
             print(f"    {name}: {status} - {result['message']}")
 
 
+def do_inject_here(paths: dict):
+    """Inject the runtime block into ./CLAUDE.md in the current working directory.
+
+    Uses repo_scanner to pick between the full and minimal block templates
+    based on the scanned repo's size and stack profile.
+    """
+    from installer.repo_scanner import scan_repo, choose_block_variant
+
+    target = Path.cwd() / "CLAUDE.md"
+    print_banner()
+    print(f"  Target: {target}\n")
+
+    subs = build_substitutions(paths)
+    scan = scan_repo(Path.cwd())
+    variant = choose_block_variant(scan)
+
+    print(f"  Repo scan: language={scan['primary_language']} size={scan['size_bucket']} "
+          f"files={scan['file_count']} tests={scan['has_tests']}")
+    print(f"  Selected block variant: {variant}\n")
+
+    result = setup_claude_md(paths, subs, mode="auto", target_override=target, block_variant=variant)
+    print(f"  {result['message']}")
+
+    if result["status"] != "success":
+        sys.exit(1)
+
+
 def do_update(paths: dict):
     """Update existing installation."""
     print("\n  Updating...\n")
@@ -352,12 +379,16 @@ def main():
     parser.add_argument("--uninstall", action="store_true", help="Remove everything")
     parser.add_argument("--verify", action="store_true", help="Post-install health check")
     parser.add_argument("--stats", action="store_true", help="Usage dashboard")
+    parser.add_argument("--inject-here", action="store_true",
+                        help="Inject runtime block into ./CLAUDE.md in the current directory")
 
     args = parser.parse_args()
     paths = get_paths()
 
     if args.update:
         do_update(paths)
+    elif args.inject_here:
+        do_inject_here(paths)
     elif args.uninstall:
         do_uninstall(paths)
     elif args.verify:

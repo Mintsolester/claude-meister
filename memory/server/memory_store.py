@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from repo_detector import MEMORY_ROOT, ensure_repo_dirs, ensure_local_memory
-from memory_scorer import estimate_tokens
+from memory_scorer import estimate_tokens, compute_tier
 from intent_classifier import classify_intent
 
 INDEX_PATH = MEMORY_ROOT / "index.json"
@@ -114,6 +114,7 @@ def _bump_existing_entry(record: dict, working_dir: str = None) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     entry["frequency"] = int(entry.get("frequency", 1)) + 1
     entry["last_used"] = now
+    entry["tier"] = compute_tier(entry)
     entry_path.write_text(json.dumps(entry, indent=2), encoding="utf-8")
     _update_local_memory(entry["repo"], entry, working_dir)
     return entry
@@ -173,6 +174,7 @@ def store_entry(
         "success_rate": None,
         "confidence_weight": 1.0,
     }
+    entry["tier"] = compute_tier(entry)
 
     # Write entry file
     entry_dir = repo_path / TYPE_TO_DIR.get(entry_type, entry_type)
