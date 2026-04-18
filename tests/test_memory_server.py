@@ -188,6 +188,98 @@ def test_outcomes_not_deduped():
     return failed == 0
 
 
+def test_validation():
+    """Phase 1.4: malformed inputs must fail fast with clear errors."""
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        memory_store, _ = _sandbox_memory(tmpdir)
+        working_dir = str(Path(tmpdir) / "fake_repo")
+        Path(working_dir).mkdir()
+
+        def expect_value_error(name, **kwargs):
+            nonlocal passed, failed
+            try:
+                memory_store.store_entry(working_dir=working_dir, **kwargs)
+                print(f"  [FAIL] {name}: expected ValueError, got success")
+                failed += 1
+            except ValueError as e:
+                print(f"  [PASS] {name}: ValueError: {e}")
+                passed += 1
+            except Exception as e:
+                print(f"  [FAIL] {name}: expected ValueError, got {type(e).__name__}: {e}")
+                failed += 1
+
+        # Empty / whitespace content
+        expect_value_error("empty content", repo="r", entry_type="pattern", content="", tags=[])
+        expect_value_error("whitespace content", repo="r", entry_type="pattern", content="   \n\t  ", tags=[])
+
+        # All-filler content (non-empty raw, empty after compression)
+        expect_value_error(
+            "all-filler content",
+            repo="r", entry_type="pattern",
+            content="just really very quite basically actually simply",
+            tags=[],
+        )
+
+        # Non-string content
+        expect_value_error("None content", repo="r", entry_type="pattern", content=None, tags=[])
+        expect_value_error("int content", repo="r", entry_type="pattern", content=123, tags=[])
+
+        # Empty / whitespace repo
+        expect_value_error("empty repo", repo="", entry_type="pattern", content="hi", tags=[])
+        expect_value_error("whitespace repo", repo="   ", entry_type="pattern", content="hi", tags=[])
+
+        # Non-string repo
+        expect_value_error("None repo", repo=None, entry_type="pattern", content="hi", tags=[])
+
+        # Invalid type (existed pre-1.4, regression check)
+        expect_value_error("invalid type", repo="r", entry_type="bogus", content="hi", tags=[])
+
+        # Non-list tags
+        expect_value_error("string tags", repo="r", entry_type="pattern", content="hi", tags="not-a-list")
+        expect_value_error("dict tags", repo="r", entry_type="pattern", content="hi", tags={"a": 1})
+
+        # Non-string tag element
+        expect_value_error("int in tags", repo="r", entry_type="pattern", content="hi", tags=["ok", 42])
+
+        # Valid inputs still succeed (sanity check that validation doesn't over-reject)
+        try:
+            entry = memory_store.store_entry(
+                repo="r", entry_type="pattern",
+                content="valid content survives compression",
+                tags=["ok"],
+                working_dir=working_dir,
+            )
+            if entry.get("id") and entry.get("content"):
+                print(f"  [PASS] Valid inputs still succeed")
+                passed += 1
+            else:
+                print(f"  [FAIL] Valid inputs returned unexpected entry: {entry}")
+                failed += 1
+        except Exception as e:
+            print(f"  [FAIL] Valid inputs unexpectedly rejected: {e}")
+            failed += 1
+
+        # Valid with tags=None (optional parameter)
+        try:
+            memory_store.store_entry(
+                repo="r", entry_type="session",
+                content="another valid entry",
+                tags=None,
+                working_dir=working_dir,
+            )
+            print(f"  [PASS] tags=None accepted")
+            passed += 1
+        except Exception as e:
+            print(f"  [FAIL] tags=None rejected: {e}")
+            failed += 1
+
+    print(f"\n  Validation: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 def test_legacy_index_without_hash():
     """Existing entries written before dedup shipped won't have content_hash. System must not crash."""
     passed = 0
@@ -241,6 +333,7 @@ if __name__ == "__main__":
     for name, func in [
         ("dedup", test_dedup),
         ("outcomes_not_deduped", test_outcomes_not_deduped),
+        ("validation", test_validation),
         ("legacy_index_compat", test_legacy_index_without_hash),
     ]:
         print(f"\nRunning: {name}")

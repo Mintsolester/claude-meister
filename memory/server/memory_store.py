@@ -87,6 +87,20 @@ def _find_duplicate(index: list, repo: str, entry_type: str, content_hash: str) 
     return None
 
 
+def _validate_inputs(repo: str, entry_type: str, content: str, tags):
+    """Fast-fail validation so malformed calls never create garbage entries."""
+    if entry_type not in VALID_TYPES:
+        raise ValueError(f"Invalid type: {entry_type}. Must be one of {VALID_TYPES}")
+    if not isinstance(repo, str) or not repo.strip():
+        raise ValueError("repo must be a non-empty string")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("content must be a non-empty string")
+    if tags is not None and not isinstance(tags, list):
+        raise ValueError("tags must be a list of strings or None")
+    if tags and not all(isinstance(t, str) for t in tags):
+        raise ValueError("tags must contain only strings")
+
+
 def _bump_existing_entry(record: dict, working_dir: str = None) -> dict:
     """Increment frequency and refresh last_used on an existing entry; return it."""
     entry_path = Path(record["path"])
@@ -117,14 +131,15 @@ def store_entry(
 
     Returns the stored entry dict.
     """
-    if entry_type not in VALID_TYPES:
-        raise ValueError(f"Invalid type: {entry_type}. Must be one of {VALID_TYPES}")
+    _validate_inputs(repo, entry_type, content, tags)
 
     # Ensure directories
     repo_path = ensure_repo_dirs(repo)
 
     # Compress
     compressed = compress_content(content)
+    if not compressed.strip():
+        raise ValueError("content is empty after compression (all filler words)")
 
     # Dedup: outcomes are event records (each one matters); everything else is knowledge
     # and duplicates should be merged into the existing entry.
