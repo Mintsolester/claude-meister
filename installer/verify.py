@@ -57,7 +57,7 @@ def run_verification(paths: dict, install_mode: str = "full") -> dict:
         checks.append(_check_valid_json(log_path, "runtime_usage.json"))
 
         # Controllers run without errors
-        for controller in ["tool_loader.py", "usage_logger.py"]:
+        for controller in ["tool_loader.py", "usage_logger.py", "usage_report.py"]:
             script = runtime_dir / "controllers" / controller
             checks.append(_check_controller_runs(script, controller))
 
