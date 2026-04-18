@@ -208,16 +208,27 @@ def build_load_plan(mode: str, task: str, repo: str, working_dir: str) -> dict:
 
     # Advisor (DEEP mode only, and only on non-Opus models)
     if signals["needs_advisor"] and mode == "DEEP":
-        advisor_path = config.get("tools_dirs", [""])[0]
-        plan["load"].append("advisor")
-        plan["commands"].append(f'python "{advisor_path}advisor.py" -p "{task[:80]}"')
+        tools_dirs = config.get("tools_dirs") or []
+        advisor_dir = tools_dirs[0] if tools_dirs else ""
+        if advisor_dir:
+            # Normalize so we always join with a single separator regardless of
+            # whether the user configured a trailing slash.
+            advisor_script = str(Path(advisor_dir) / "advisor.py").replace("\\", "/")
+            plan["load"].append("advisor")
+            plan["commands"].append(f'python "{advisor_script}" -p "{task[:80]}"')
+        else:
+            plan["skip"].append("advisor")
     else:
         plan["skip"].append("advisor")
 
-    # Post-task logging
+    # Post-task logging — embed the load list so the tokens_saved metric can
+    # score this task without the agent having to re-derive it.
+    components_csv = ",".join(plan["load"])
     plan["post_task"] = (
         f'python "{runtime}/controllers/usage_logger.py" '
-        f'--mode {mode} --task-summary "{{SUMMARY}}"'
+        f'--mode {mode} --task-summary "{{SUMMARY}}" '
+        f'--components-loaded "{components_csv}" '
+        f'--memory-tokens {{MEMORY_TOKENS}}'
     )
 
     plan["instructions"] = (

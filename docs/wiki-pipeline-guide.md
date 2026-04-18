@@ -56,7 +56,7 @@ Before you start, make sure you have the following in place.
 ### Required
 
 **Claude Code with Claude_Meister installed**
-If Claude_Meister isn't installed yet, follow the steps in the project README. Once it's installed, you'll have a `runtime_config.json` file at `C:/Users/yourname/.claude_meister/runtime_config.json`. That config is where you'll point Claude at your wiki at the end of this guide.
+If Claude_Meister isn't installed yet, follow the steps in the project README. Once it's installed, you'll have a `runtime_config.json` file at `C:/Users/yourname/.claude_runtime/configs/runtime_config.json`. That config is where you'll point Claude at your wiki at the end of this guide.
 
 **A domain to build the wiki for**
 This can be anything:
@@ -769,7 +769,7 @@ The router never reads more than 5 pages per query. If 5 pages don't answer the 
 
 To point Claude_Meister's context router at your wiki, set the `wiki_path` field in your runtime config.
 
-Open `C:/Users/yourname/.claude_meister/runtime_config.json`. See `docs/configuration.md` for a full reference of all configuration fields. The relevant section looks like this:
+Open `C:/Users/yourname/.claude_runtime/configs/runtime_config.json`. See `docs/configuration.md` for a full reference of all configuration fields. The relevant section looks like this:
 
 ```json
 {
@@ -1153,7 +1153,7 @@ Token count: ~280 words ≈ ~365 tokens. Well within the 500-token cap.
 
 ### Step 6: Configure wiki\_path for the React Wiki
 
-Open `C:/Users/yourname/.claude_meister/runtime_config.json` and add:
+Open `C:/Users/yourname/.claude_runtime/configs/runtime_config.json` and add:
 
 ```json
 {

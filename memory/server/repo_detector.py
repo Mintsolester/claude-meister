@@ -10,6 +10,25 @@ REPOS_DIR = MEMORY_ROOT / "repos"
 
 REPO_SUBDIRS = ["sessions", "decisions", "patterns", "structure", "outcomes", "evolution"]
 
+# Collapse anything that isn't a safe identifier. Prevents `../evil` or
+# absolute paths in a repo_name from escaping REPOS_DIR when mkdir runs.
+_UNSAFE_REPO_CHARS = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def sanitize_repo_name(name: str) -> str:
+    """Return a filesystem-safe repo name. Strips separators and parent refs."""
+    if not name:
+        return "unknown"
+    # Drop leading/trailing whitespace and any path separators the caller leaked.
+    cleaned = name.strip().replace("\\", "_").replace("/", "_")
+    # Replace runs of unsafe chars with a single underscore.
+    cleaned = _UNSAFE_REPO_CHARS.sub("_", cleaned).strip("._")
+    # Reject the traversal markers outright even if they survived.
+    if cleaned in ("", ".", ".."):
+        return "unknown"
+    # Cap length — filesystems dislike monster directory names.
+    return cleaned[:128]
+
 
 def detect_repo_name(working_dir: str = None) -> str:
     """Extract repo name from .git/config remote URL, fallback to directory name."""
@@ -27,11 +46,11 @@ def detect_repo_name(working_dir: str = None) -> str:
                     if url:
                         name = _extract_name_from_url(url)
                         if name:
-                            return name
+                            return sanitize_repo_name(name)
         except Exception:
             pass
 
-    return os.path.basename(os.path.abspath(working_dir))
+    return sanitize_repo_name(os.path.basename(os.path.abspath(working_dir)))
 
 
 def _extract_name_from_url(url: str) -> str:
@@ -49,7 +68,8 @@ def _extract_name_from_url(url: str) -> str:
 
 def ensure_repo_dirs(repo_name: str) -> Path:
     """Create repo memory directories if they don't exist. Returns repo path."""
-    repo_path = REPOS_DIR / repo_name
+    safe_name = sanitize_repo_name(repo_name)
+    repo_path = REPOS_DIR / safe_name
     for subdir in REPO_SUBDIRS:
         (repo_path / subdir).mkdir(parents=True, exist_ok=True)
     return repo_path

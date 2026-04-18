@@ -12,7 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from mcp.server.fastmcp import FastMCP
 
-import memory_store
+# Aliased — the @mcp.tool() decorator below defines a function also called
+# `memory_store`, which would shadow the module reference and break dispatch.
+import memory_store as memory_store_mod
 import memory_retriever
 import memory_scorer
 import evolution_engine
@@ -73,7 +75,7 @@ def memory_store(
         outcome: Optional outcome data: {decision_id, expected_result, actual_result, success, error_analysis}
         working_dir: Working directory path (for local cache update)
     """
-    return memory_store.store_entry(
+    return memory_store_mod.store_entry(
         repo=repo,
         entry_type=type,
         content=content,

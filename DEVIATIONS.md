@@ -173,6 +173,86 @@ signals. Without the None-as-neutral rule, nothing promotes at all
 until outcomes get finalized, defeating the tier's ranking value in the
 interim.
 
+## Post-v1.2.0 Hardening — Pre-Ship Bug Sweep
+
+A targeted sweep before public release found and fixed six pre-existing
+bugs (none introduced by Phase 1–3 work). Each is recorded here because
+the changes ship outside the original plan.
+
+### `runtime_loader.py` — `tools_dirs: []` IndexError + bad path concat
+
+**Symptom:** `--complexity architectural` on a config with explicit
+`tools_dirs: []` raised `IndexError`. Even with a populated list, the
+advisor command was built via string concatenation that double-slashed
+or mis-joined depending on the trailing-slash convention of the config.
+
+**Fix:** Guard with `tools_dirs = config.get("tools_dirs") or []`, take
+the first element only when present, and build the advisor path with
+`Path(advisor_dir) / "advisor.py"` so separators are correct on every
+OS.
+
+### `memory_controller.py` — schema mismatch + arbitrary file read
+
+**Symptom:** `load_entry_file()` looked up the key `file_path`, but the
+index writer (`memory_store.py:223`) emits `path`. Every entry resolved
+to its truncated `content` field, never the on-disk file. Worse, when
+the path *was* read, no boundary check was done — a tampered index could
+make the controller read any file the user could read.
+
+**Fix:** Honor both `path` and `file_path` for forward compatibility;
+resolve the candidate against `memory_root` and reject anything that
+escapes it via `Path.relative_to()`. Failed boundary check returns the
+inline content fallback rather than leaking the file.
+
+### `repo_detector.py` — path traversal via repo name
+
+**Symptom:** `ensure_repo_dirs("../../etc")` would happily run `mkdir`
+outside `~/.claude_memory/repos/`. Repo names came straight from
+`.git/config` URLs (or `os.path.basename`) with no sanitization.
+
+**Fix:** Added `sanitize_repo_name()` that collapses unsafe chars,
+strips separators, rejects `.` / `..`, and caps the length. Both
+`detect_repo_name()` (return values) and `ensure_repo_dirs()` (input
+arg) now route through it.
+
+### `main.py` — MCP tool name shadows imported module
+
+**Symptom:** `import memory_store` (line 15) brings in the module;
+`@mcp.tool() def memory_store(...)` (line 56) rebinds the same name to
+the function. At runtime the function body's `memory_store.store_entry`
+resolves to the function, not the module — every call to the
+`memory_store` MCP tool would raise `AttributeError`. Unit tests didn't
+catch this because they import `memory_store.store_entry` directly,
+bypassing the MCP layer.
+
+**Fix:** `import memory_store as memory_store_mod` and update the call
+site. Other tools (`memory_retrieve`, `memory_evolve`, `memory_cleanup`,
+etc.) don't collide because their module names differ from the tool
+names.
+
+### `cleanup.py` — `freed_bytes` always reports 0
+
+**Symptom:** The reporting block called `path.exists()` *after*
+`entry_file.unlink()`, so the `if path.exists()` guard was always false
+and `freed_bytes` was always zero in the cleanup log.
+
+**Fix:** Capture `entry_file.stat().st_size` *before* unlinking and stash
+it as `r["size"]` in each removed record. The final calculation is now
+`sum(r["size"] for r in removed)`, accurate in both real and dry-run
+modes.
+
+### `docs/wiki-pipeline-guide.md` — wrong config path (3 places)
+
+**Symptom:** Three references told users to edit
+`C:/Users/yourname/.claude_meister/runtime_config.json`. That directory
+does not exist; the real path is
+`C:/Users/yourname/.claude_runtime/configs/runtime_config.json`. Anyone
+following the guide literally would have failed at the wiki-pointing
+step.
+
+**Fix:** Replaced all three occurrences (lines 59, 772, 1156) with the
+correct path. No other files referenced the wrong path.
+
 ## Phase 3.4 — failure registry is cross-repo with per-repo ranking
 
 **Plan:** "On `memory_evolve` with `success=false`, extract a pattern

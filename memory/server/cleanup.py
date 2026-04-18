@@ -54,6 +54,14 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
 
             for entry_file in dir_path.glob("*.json"):
                 scanned += 1
+                # Capture size up-front: after unlink() the file is gone and
+                # any later .stat() call will return 0 (or fail), making the
+                # cleanup report claim it freed no space.
+                try:
+                    file_size = entry_file.stat().st_size
+                except OSError:
+                    file_size = 0
+
                 try:
                     entry = json.loads(entry_file.read_text(encoding="utf-8"))
                 except Exception:
@@ -64,6 +72,7 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
                         "type": type_dir,
                         "reason": "corrupt_file",
                         "path": str(entry_file),
+                        "size": file_size,
                     })
                     if not dry_run:
                         entry_file.unlink()
@@ -78,6 +87,7 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
                         "type": type_dir,
                         "reason": f"low_score ({score:.1f})",
                         "path": str(entry_file),
+                        "size": file_size,
                     })
                     if not dry_run:
                         entry_file.unlink()
@@ -98,6 +108,7 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
                                 "type": type_dir,
                                 "reason": f"stale ({days_old:.0f} days)",
                                 "path": str(entry_file),
+                                "size": file_size,
                             })
                             if not dry_run:
                                 entry_file.unlink()
@@ -118,6 +129,10 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
             for outcome_file in outcomes_dir.glob("*.json"):
                 scanned += 1
                 try:
+                    file_size = outcome_file.stat().st_size
+                except OSError:
+                    file_size = 0
+                try:
                     outcome = json.loads(outcome_file.read_text(encoding="utf-8"))
                     decision_id = outcome.get("decision_id", "")
                     if decision_id and decision_id not in existing_decisions:
@@ -127,6 +142,7 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
                             "type": "outcome",
                             "reason": f"orphan (decision {decision_id[:8]}... deleted)",
                             "path": str(outcome_file),
+                            "size": file_size,
                         })
                         if not dry_run:
                             outcome_file.unlink()
@@ -140,12 +156,10 @@ def run_cleanup(repo: str = None, dry_run: bool = False) -> dict:
         index = [e for e in index if e.get("id") not in removed_ids]
         _save_json(INDEX_PATH, index)
 
-    # Calculate freed space
-    freed_bytes = 0
-    for r in removed:
-        path = Path(r["path"])
-        if path.exists():
-            freed_bytes += path.stat().st_size
+    # Sum the sizes captured BEFORE we unlinked each file. We can't stat()
+    # them now — they no longer exist (or do, when dry_run=True; in that
+    # case the size is still accurate as of the scan).
+    freed_bytes = sum(int(r.get("size", 0)) for r in removed)
 
     # Log cleanup
     log_entry = {

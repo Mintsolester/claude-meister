@@ -3,6 +3,44 @@
 All notable changes to Claude_Meister are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## v1.4.0 — 2026-04-19
+
+### Added
+- **`tokens_saved` runtime metric** — `usage_logger.py` now records
+  `components_loaded`, `tokens_loaded`, `tokens_saved`, and
+  `baseline_tokens` on every task. Savings are computed against a naive
+  baseline of 5879 tokens — what loading every runtime component on
+  every task would cost. `usage_report.py` surfaces total saved, per-task
+  average, savings rate, and per-mode breakdown. `runtime_loader.py`
+  embeds `--components-loaded` into the post-task command so the metric
+  populates automatically. Older log records are backfilled on the fly
+  from `components_loaded` + `memory_tokens` so historical data still
+  contributes.
+
+### Fixed (Pre-Ship Hardening Sweep)
+- **`runtime_loader.py`** — `tools_dirs: []` no longer raises `IndexError`;
+  advisor-script path now uses `Path` joining instead of fragile string
+  concatenation.
+- **`memory_controller.py`** — Honors both `path` and `file_path` keys in
+  the index (schema mismatch was making every entry fall through to its
+  truncated `content` field). Added a `relative_to(memory_root)` boundary
+  check that turns this into a sandboxed reader instead of an
+  arbitrary-file-read primitive when the index is tampered with.
+- **`repo_detector.py`** — New `sanitize_repo_name()` collapses unsafe
+  chars, rejects `.` / `..` / empty, and caps length. Wired into both
+  `detect_repo_name()` and `ensure_repo_dirs()` so a malicious repo name
+  can no longer escape `~/.claude_memory/repos/`.
+- **`memory/server/main.py`** — `import memory_store` no longer collides
+  with the `@mcp.tool() def memory_store(...)` definition. Aliased to
+  `memory_store_mod` so the tool can actually call `store_entry()` at
+  runtime instead of raising `AttributeError`.
+- **`cleanup.py`** — `freed_bytes` is no longer always 0. File sizes are
+  captured *before* `unlink()` and stored on each removed record, then
+  summed at the end.
+- **`docs/wiki-pipeline-guide.md`** — Three references to the wrong
+  config path (`~/.claude_meister/runtime_config.json`) corrected to
+  `~/.claude_runtime/configs/runtime_config.json`.
+
 ## v1.3.0 — 2026-04-18
 
 ### Added

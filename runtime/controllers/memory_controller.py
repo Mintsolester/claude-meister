@@ -43,12 +43,27 @@ def load_index(memory_root: str) -> list:
 
 
 def load_entry_file(memory_root: str, entry: dict) -> str:
-    """Load the content of a memory entry file."""
-    file_path = entry.get("file_path", "")
-    if not file_path:
+    """Load the content of a memory entry file.
+
+    Index entries use the key ``path`` (older code read ``file_path``; both
+    are honored for forward compatibility). The resolved file must live under
+    ``memory_root`` — anything that escapes that directory is rejected so a
+    tampered index cannot turn this into an arbitrary-file reader.
+    """
+    raw_path = entry.get("path") or entry.get("file_path") or ""
+    if not raw_path:
         return entry.get("content", "")
 
-    full_path = Path(memory_root) / file_path if not Path(file_path).is_absolute() else Path(file_path)
+    root_resolved = Path(memory_root).resolve()
+    candidate = Path(raw_path)
+    full_path = (root_resolved / candidate if not candidate.is_absolute() else candidate).resolve()
+
+    try:
+        full_path.relative_to(root_resolved)
+    except ValueError:
+        # Path escapes memory_root — treat as missing rather than leaking files.
+        return entry.get("content", "")
+
     if full_path.exists():
         try:
             return full_path.read_text(encoding="utf-8")
