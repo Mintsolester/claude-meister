@@ -1,5 +1,6 @@
 """Store, compress, and index memory entries."""
 
+import hashlib
 import json
 import os
 import re
@@ -65,6 +66,44 @@ def _save_index(index: list):
     INDEX_PATH.write_text(json.dumps(index, indent=2), encoding="utf-8")
 
 
+def _normalize_for_hash(text: str) -> str:
+    """Lowercase + collapse whitespace so trivial variants hash identically."""
+    return re.sub(r"\s+", " ", text.lower()).strip()
+
+
+def _content_hash(content: str) -> str:
+    return hashlib.sha256(_normalize_for_hash(content).encode("utf-8")).hexdigest()
+
+
+def _find_duplicate(index: list, repo: str, entry_type: str, content_hash: str) -> dict | None:
+    """Return the matching index record, or None. Same repo + type + hash required."""
+    for record in index:
+        if (
+            record.get("repo") == repo
+            and record.get("type") == entry_type
+            and record.get("content_hash") == content_hash
+        ):
+            return record
+    return None
+
+
+def _bump_existing_entry(record: dict, working_dir: str = None) -> dict:
+    """Increment frequency and refresh last_used on an existing entry; return it."""
+    entry_path = Path(record["path"])
+    if not entry_path.exists():
+        return None
+    try:
+        entry = json.loads(entry_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    now = datetime.now(timezone.utc).isoformat()
+    entry["frequency"] = int(entry.get("frequency", 1)) + 1
+    entry["last_used"] = now
+    entry_path.write_text(json.dumps(entry, indent=2), encoding="utf-8")
+    _update_local_memory(entry["repo"], entry, working_dir)
+    return entry
+
+
 def store_entry(
     repo: str,
     entry_type: str,
@@ -87,6 +126,18 @@ def store_entry(
     # Compress
     compressed = compress_content(content)
 
+    # Dedup: outcomes are event records (each one matters); everything else is knowledge
+    # and duplicates should be merged into the existing entry.
+    index = _load_index()
+    hash_value = _content_hash(compressed)
+    if entry_type != "outcome":
+        duplicate = _find_duplicate(index, repo, entry_type, hash_value)
+        if duplicate:
+            bumped = _bump_existing_entry(duplicate, working_dir)
+            if bumped:
+                return bumped
+            # If the referenced file vanished, fall through and create fresh.
+
     # Build entry
     now = datetime.now(timezone.utc).isoformat()
     entry_id = str(uuid.uuid4())
@@ -95,6 +146,7 @@ def store_entry(
         "type": entry_type,
         "repo": repo,
         "content": compressed,
+        "content_hash": hash_value,
         "tags": tags or [],
         "created": now,
         "last_used": now,
@@ -142,8 +194,7 @@ def store_entry(
         outcome_path = repo_path / "outcomes" / f"{outcome_id}.json"
         outcome_path.write_text(json.dumps(outcome_record, indent=2), encoding="utf-8")
 
-    # Update global index
-    index = _load_index()
+    # Update global index (reuse `index` loaded above for the dedup scan)
     index.append({
         "id": entry_id,
         "type": entry_type,
@@ -151,6 +202,7 @@ def store_entry(
         "tags": tags or [],
         "created": now,
         "path": str(entry_dir / f"{entry_id}.json"),
+        "content_hash": hash_value,
     })
     _save_index(index)
 
