@@ -3,12 +3,18 @@
 Usage:
     python usage_logger.py --mode STANDARD --tools-used "advisor.py,tool_loader.py" --memory-tokens 312 --task-summary "Refactored auth"
     python usage_logger.py --stats
+    python usage_logger.py --finalize <task_id> --success true --outcome-note "All tests green"
+    python usage_logger.py --finalize <task_id> --success false --outcome-note "Hit API rate limit"
+
+Records carry an `id`, `success` (tri-state: true/false/null), and `outcome_note`.
+A fresh log call starts with success=null; --finalize sets the outcome later.
 """
 
 import argparse
 import json
 import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -73,23 +79,61 @@ def rotate_if_needed(log_path: Path, entries: list, max_entries=1000):
     return entries[cutoff:]
 
 
+def _parse_success(raw: str | None) -> bool | None:
+    """Parse a string truthy/falsy value. None stays None."""
+    if raw is None:
+        return None
+    val = raw.strip().lower()
+    if val in ("true", "1", "yes", "y", "ok", "pass", "passed"):
+        return True
+    if val in ("false", "0", "no", "n", "fail", "failed"):
+        return False
+    raise ValueError(f"--success must be true/false, got: {raw}")
+
+
 def log_usage(args):
     log_path = get_log_path()
     entries = load_log(log_path)
 
     record = {
+        "id": str(uuid.uuid4()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "mode": args.mode or "UNKNOWN",
         "tools_used": [t.strip() for t in args.tools_used.split(",") if t.strip()] if args.tools_used else [],
         "memory_tokens": args.memory_tokens or 0,
         "task_summary": args.task_summary or "",
         "repo": detect_repo(),
+        "success": _parse_success(args.success),
+        "outcome_note": args.outcome_note or "",
     }
 
     entries.append(record)
     entries = rotate_if_needed(log_path, entries)
     save_log(log_path, entries)
     print(json.dumps({"status": "logged", "record": record}, indent=2))
+
+
+def finalize(args):
+    """Update success + outcome_note on an existing record by id."""
+    log_path = get_log_path()
+    entries = load_log(log_path)
+
+    target_id = args.finalize
+    success_value = _parse_success(args.success)
+    note = args.outcome_note or ""
+
+    for record in entries:
+        if record.get("id") == target_id:
+            record["success"] = success_value
+            if note:
+                record["outcome_note"] = note
+            record["finalized_at"] = datetime.now(timezone.utc).isoformat()
+            save_log(log_path, entries)
+            print(json.dumps({"status": "finalized", "record": record}, indent=2))
+            return
+
+    print(json.dumps({"status": "not_found", "id": target_id}), file=sys.stderr)
+    sys.exit(2)
 
 
 def show_stats():
@@ -103,6 +147,7 @@ def show_stats():
     mode_counts = {}
     tool_counts = {}
     total_memory = 0
+    success_by_mode = {}  # mode -> [wins, losses, unknown]
 
     for e in entries:
         mode = e.get("mode", "UNKNOWN")
@@ -111,13 +156,28 @@ def show_stats():
             tool_counts[tool] = tool_counts.get(tool, 0) + 1
         total_memory += e.get("memory_tokens", 0)
 
+        bucket = success_by_mode.setdefault(mode, [0, 0, 0])
+        s = e.get("success")
+        if s is True:
+            bucket[0] += 1
+        elif s is False:
+            bucket[1] += 1
+        else:
+            bucket[2] += 1
+
     top_tools = sorted(tool_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    success_rate = {}
+    for mode, (wins, losses, _unknown) in success_by_mode.items():
+        finalized = wins + losses
+        success_rate[mode] = round(wins / finalized, 3) if finalized else None
 
     stats = {
         "total_entries": len(entries),
         "mode_distribution": mode_counts,
         "top_tools": dict(top_tools),
         "avg_memory_tokens": round(total_memory / len(entries), 1),
+        "success_rate_by_mode": success_rate,
         "date_range": {
             "first": entries[0].get("timestamp", ""),
             "last": entries[-1].get("timestamp", ""),
@@ -132,11 +192,16 @@ def main():
     parser.add_argument("--tools-used", type=str, default="", help="Comma-separated tool names")
     parser.add_argument("--memory-tokens", type=int, default=0, help="Tokens used for memory retrieval")
     parser.add_argument("--task-summary", type=str, default="", help="Brief task description")
+    parser.add_argument("--success", type=str, default=None, help="true/false; set on log or finalize")
+    parser.add_argument("--outcome-note", type=str, default="", help="Optional free-form outcome note")
+    parser.add_argument("--finalize", type=str, default=None, help="Task id to finalize")
     parser.add_argument("--stats", action="store_true", help="Show usage statistics")
     args = parser.parse_args()
 
     if args.stats:
         show_stats()
+    elif args.finalize:
+        finalize(args)
     else:
         log_usage(args)
 

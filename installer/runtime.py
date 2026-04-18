@@ -3,6 +3,8 @@
 import json
 import os
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from installer.paths import apply_substitutions
@@ -102,6 +104,9 @@ def install_runtime(paths: dict, substitutions: dict) -> dict:
                 file_path.write_text(default_content, encoding="utf-8")
                 files_copied += 1
 
+        # Build tool_index.json so tool_loader can use index-first lookup
+        _build_tool_index(target_dir)
+
         return {
             "status": "success",
             "files_copied": files_copied,
@@ -142,6 +147,10 @@ def update_runtime(paths: dict, substitutions: dict) -> dict:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
 
+        # Rebuild the tool index now that the user's tools_dirs config is back in place.
+        # (install_runtime also runs it, but against the freshly-templated empty config.)
+        _build_tool_index(target_dir)
+
         result["preserved"] = preserved
         result["message"] = (
             f"Runtime updated. {result['files_copied']} files refreshed. "
@@ -176,6 +185,22 @@ def remove_runtime(paths: dict, confirm: bool = True) -> dict:
         return {"status": "error", "message": f"Permission denied: {e}"}
     except Exception as e:
         return {"status": "error", "message": f"Removal failed: {e}"}
+
+
+def _build_tool_index(target_dir: Path) -> None:
+    """Best-effort: run build_tool_index.py after install. Never hard-fail the install."""
+    builder = target_dir / "controllers" / "build_tool_index.py"
+    if not builder.exists():
+        return
+    try:
+        subprocess.run(
+            [sys.executable, str(builder)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:
+        pass
 
 
 def check_existing_installation(paths: dict) -> dict:

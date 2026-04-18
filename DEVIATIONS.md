@@ -89,3 +89,43 @@ showing the macOS/Linux variant.
 initial draft showed Unix paths, which would confuse the majority of
 users. The note below preserves cross-platform clarity without burying
 the lede for the main audience.
+
+## Phase 2.2 — `tool_index.json` rebuild placement
+
+**Plan:** "Index is regenerated on `install.py --update` or manually via
+`tool_loader.py --rebuild-index`."
+**Actual:** `install_runtime()` calls `_build_tool_index()` at the end of
+a fresh install, AND `update_runtime()` calls it a second time *after*
+preserved files (including `configs/runtime_config.json`) are restored.
+**Reason:** `PRESERVE_ON_UPDATE` backs up the user's real
+`runtime_config.json` before reinstall and restores it afterward. If the
+index builder ran only once (inside `install_runtime`), it would execute
+against the freshly-templated config where `tools_dirs: []`, producing an
+empty index on every update. The second rebuild sees the restored config
+with the user's real `tools_dirs`. The first rebuild is kept so fresh
+installs still leave a valid (empty) index file on disk.
+
+## Phase 2.2 — `tool_loader.py` skips index when `--scan-dir` is set
+
+**Plan:** "`--query` first checks the index; falls back to current
+docstring-scoring on miss."
+**Actual:** Index lookup is also bypassed when the caller passes
+`--scan-dir` (one or more times), and via a new explicit `--no-index`
+flag.
+**Reason:** `--scan-dir` means "scan this specific directory" — the
+caller is overriding the default tool registry, so the pre-built index
+(keyed off `tools_dirs` in runtime_config) would not represent what they
+asked for. Deferring to the docstring walk in that case matches the
+caller's intent. `--no-index` gives tests and debugging a deterministic
+way to force the fallback path.
+
+## Phase 2.3 — `usage_logger.py --finalize` exit code on missing id
+
+**Plan:** "`--finalize <task_id> --success true|false` updates the record."
+**Actual:** When `--finalize <id>` does not match any existing record,
+the process writes `{"status": "not_found", "id": "..."}` to stderr and
+exits with code 2.
+**Reason:** A silent no-op would let a broken finalize call leak into
+`usage_report.py` as a "success=null" record. Exit code 2 lets callers
+detect and retry without scanning stdout. The log is unchanged on
+mismatch (no silent append).
