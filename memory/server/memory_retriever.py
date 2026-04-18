@@ -8,9 +8,12 @@ from pathlib import Path
 
 from repo_detector import MEMORY_ROOT, ensure_local_memory
 from memory_scorer import composite_score, record_access, estimate_tokens
+from intent_classifier import classify_intent
 
 INDEX_PATH = MEMORY_ROOT / "index.json"
 GLOBAL_PATTERNS_DIR = MEMORY_ROOT / "global_patterns"
+
+INTENT_MATCH_BOOST = 1.15  # Multiplicative bump when query and entry share a non-general intent
 
 
 def _load_index() -> list:
@@ -89,6 +92,9 @@ def retrieve(
     sources = []
     used_tokens = 0
 
+    # Classify query intent once — used to boost entries with matching intent.
+    query_intent = classify_intent(query)
+
     # --- Layer 1: Local repo cache ---
     local_path = ensure_local_memory(working_dir)
 
@@ -159,7 +165,18 @@ def retrieve(
             tag_score = _tag_match_score(query, entry.get("tags", []))
             entry["relevance_score"] = min(100, tfidf * 0.7 + tag_score * 0.3)
 
+            # Lazy intent backfill: classify from content once, persist on first access.
+            entry_intent = entry.get("intent")
+            if not entry_intent:
+                entry_intent = classify_intent(entry.get("content", ""))
+                entry["intent"] = entry_intent
+
             score = composite_score(entry)
+            if (
+                query_intent != "general"
+                and entry_intent == query_intent
+            ):
+                score *= INTENT_MATCH_BOOST
             scored.append((score, entry))
 
         # Sort by score descending

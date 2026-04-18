@@ -10,6 +10,7 @@ from pathlib import Path
 
 from repo_detector import MEMORY_ROOT, ensure_repo_dirs, ensure_local_memory
 from memory_scorer import estimate_tokens
+from intent_classifier import classify_intent
 
 INDEX_PATH = MEMORY_ROOT / "index.json"
 
@@ -162,6 +163,7 @@ def store_entry(
         "repo": repo,
         "content": compressed,
         "content_hash": hash_value,
+        "intent": classify_intent(compressed),
         "tags": tags or [],
         "created": now,
         "last_used": now,

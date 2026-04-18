@@ -11,7 +11,8 @@ sys.path.insert(0, str(PROJECT_ROOT / "memory" / "server"))
 
 
 def _sandbox_memory(tmpdir: str):
-    """Point repo_detector + memory_store at a temp home so tests don't touch real data."""
+    """Point repo_detector + memory_store + memory_retriever at a temp home
+    so tests don't touch real data."""
     import repo_detector
     import memory_store
 
@@ -25,6 +26,13 @@ def _sandbox_memory(tmpdir: str):
     repo_detector.MEMORY_ROOT = memory_root
     repo_detector.REPOS_DIR = memory_root / "repos"
     memory_store.INDEX_PATH = index_path
+
+    # memory_retriever captures MEMORY_ROOT / INDEX_PATH at import time; patch them.
+    import memory_retriever
+    memory_retriever.MEMORY_ROOT = memory_root
+    memory_retriever.INDEX_PATH = index_path
+    memory_retriever.GLOBAL_PATTERNS_DIR = memory_root / "global_patterns"
+
     return memory_store, repo_detector
 
 
@@ -280,6 +288,166 @@ def test_validation():
     return failed == 0
 
 
+def test_intent_classifier():
+    """Phase 2.1: classify_intent buckets common phrasings correctly."""
+    from intent_classifier import classify_intent
+
+    passed = 0
+    failed = 0
+
+    cases = [
+        # (text, expected intent)
+        ("why is this function failing?", "debug"),
+        ("traceback from the test run", "debug"),
+        ("got a stack trace in prod", "debug"),
+        ("let's refactor the architecture of this module", "architecture"),
+        ("design pattern for the auth layer", "architecture"),
+        ("need to decide between postgres and sqlite", "decision"),
+        ("rationale for choosing async over threads", "decision"),
+        ("implement a helper function for this", "code"),
+        ("what's the method signature?", "code"),
+        ("hello world", "general"),
+        ("", "general"),
+        ("   ", "general"),
+    ]
+    for text, expected in cases:
+        got = classify_intent(text)
+        if got == expected:
+            print(f"  [PASS] {text!r} -> {got}")
+            passed += 1
+        else:
+            print(f"  [FAIL] {text!r} -> {got} (expected {expected})")
+            failed += 1
+
+    # Priority: debug wins over code when both appear
+    if classify_intent("this function has a bug") == "debug":
+        print(f"  [PASS] debug beats code when both trigger (specificity order)")
+        passed += 1
+    else:
+        print(f"  [FAIL] bug+function failed to route to debug")
+        failed += 1
+
+    print(f"\n  Intent classifier: {passed} passed, {failed} failed")
+    return failed == 0
+
+
+def test_intent_boost_in_retrieval():
+    """Phase 2.1: entries matching the query's intent rank higher."""
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        memory_store, _ = _sandbox_memory(tmpdir)
+        import memory_retriever
+        memory_retriever.INDEX_PATH = memory_store.INDEX_PATH
+
+        working_dir = str(Path(tmpdir) / "fake_repo")
+        Path(working_dir).mkdir()
+
+        # Seed two entries in the same repo, both decent TF-IDF match for a debug query,
+        # but only one is tagged as debug-intent.
+        debug_entry = memory_store.store_entry(
+            repo="r", entry_type="pattern",
+            content="When the error traceback mentions circular imports, rename module",
+            tags=["imports"],
+            working_dir=working_dir,
+        )
+        code_entry = memory_store.store_entry(
+            repo="r", entry_type="pattern",
+            content="The import statement should come before any function definition",
+            tags=["imports"],
+            working_dir=working_dir,
+        )
+
+        # Sanity: intents were assigned at write time
+        if debug_entry["intent"] == "debug" and code_entry["intent"] == "code":
+            print(f"  [PASS] Intent assigned at write time (debug vs code)")
+            passed += 1
+        else:
+            print(f"  [FAIL] Wrong intents: debug={debug_entry['intent']}, code={code_entry['intent']}")
+            failed += 1
+
+        # Query with debug intent should rank the debug entry first
+        result = memory_retriever.retrieve(
+            query="traceback error on import",
+            repo="r",
+            max_tokens=500,
+            working_dir=working_dir,
+        )
+        global_memories = [m for m in result["memories"] if m["type"] not in ("hot_context", "recent_sessions")]
+        if global_memories and global_memories[0]["id"] == debug_entry["id"]:
+            print(f"  [PASS] Debug-intent query ranks debug-intent entry first")
+            passed += 1
+        else:
+            order = [m["id"] for m in global_memories]
+            print(f"  [FAIL] Expected {debug_entry['id']} first, got order: {order}")
+            failed += 1
+
+        # General-intent query should NOT boost either (both ranked by regular scoring only)
+        # We verify this indirectly: with no intent match, the ordering depends on
+        # TF-IDF, and we don't make claims about which wins — just that no crash happens.
+        result2 = memory_retriever.retrieve(
+            query="something random",
+            repo="r",
+            max_tokens=500,
+            working_dir=working_dir,
+        )
+        if isinstance(result2.get("memories"), list):
+            print(f"  [PASS] General-intent query returns a valid result without boost")
+            passed += 1
+        else:
+            print(f"  [FAIL] General query broke retrieval: {result2}")
+            failed += 1
+
+    print(f"\n  Intent boost: {passed} passed, {failed} failed")
+    return failed == 0
+
+
+def test_intent_lazy_backfill():
+    """Legacy entries without 'intent' get backfilled on first retrieval."""
+    passed = 0
+    failed = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        memory_store, _ = _sandbox_memory(tmpdir)
+        import memory_retriever
+        memory_retriever.INDEX_PATH = memory_store.INDEX_PATH
+
+        working_dir = str(Path(tmpdir) / "fake_repo")
+        Path(working_dir).mkdir()
+
+        # Write an entry, then strip its intent field to simulate a pre-2.1 entry.
+        entry = memory_store.store_entry(
+            repo="r", entry_type="pattern",
+            content="The error traceback pointed at the wrong module",
+            tags=[],
+            working_dir=working_dir,
+        )
+        entry_path = Path(memory_store._load_index()[0]["path"])
+        data = json.loads(entry_path.read_text(encoding="utf-8"))
+        data.pop("intent", None)
+        entry_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+        # Retrieve; this should classify and save back.
+        memory_retriever.retrieve(
+            query="traceback error",
+            repo="r",
+            max_tokens=500,
+            working_dir=working_dir,
+        )
+
+        refreshed = json.loads(entry_path.read_text(encoding="utf-8"))
+        if refreshed.get("intent") == "debug":
+            print(f"  [PASS] Legacy entry backfilled with intent='debug' on retrieval")
+            passed += 1
+        else:
+            print(f"  [FAIL] Backfill did not persist: {refreshed.get('intent')}")
+            failed += 1
+
+    print(f"\n  Intent backfill: {passed} passed, {failed} failed")
+    return failed == 0
+
+
 def test_legacy_index_without_hash():
     """Existing entries written before dedup shipped won't have content_hash. System must not crash."""
     passed = 0
@@ -334,6 +502,9 @@ if __name__ == "__main__":
         ("dedup", test_dedup),
         ("outcomes_not_deduped", test_outcomes_not_deduped),
         ("validation", test_validation),
+        ("intent_classifier", test_intent_classifier),
+        ("intent_boost", test_intent_boost_in_retrieval),
+        ("intent_backfill", test_intent_lazy_backfill),
         ("legacy_index_compat", test_legacy_index_without_hash),
     ]:
         print(f"\nRunning: {name}")
