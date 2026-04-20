@@ -16,10 +16,5 @@
   ],
   "homepage": "https://github.com/Mintsolester/claude-meister",
   "repository": "https://github.com/Mintsolester/claude-meister",
-  "skills": [
-    "install-claude-meister",
-    "verify-claude-meister",
-    "configure-claude-meister",
-    "troubleshoot-claude-meister"
-  ]
+  "skills": "./skills/"
 }

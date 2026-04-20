@@ -1,13 +1,37 @@
 {
+  "name": "claude-meister-marketplace",
+  "owner": {
+    "name": "Mintsolester",
+    "email": "Mintsolester@users.noreply.github.com"
+  },
+  "metadata": {
+    "description": "Marketplace for Claude_Meister plugins.",
+    "version": "1.0.0"
+  },
   "plugins": [
     {
       "name": "claude-meister",
       "description": "Runtime intelligence layer for Claude Code with install, verify, configuration, and troubleshooting skills.",
       "version": "1.4.0",
-      "path": "plugins/claude-meister",
-      "author": "Mintsolester",
+      "source": "./plugins/claude-meister",
+      "author": {
+        "name": "Mintsolester",
+        "email": "Mintsolester@users.noreply.github.com"
+      },
       "license": "MIT",
-      "repository": "https://github.com/Mintsolester/claude-meister"
+      "repository": "https://github.com/Mintsolester/claude-meister",
+      "keywords": [
+        "claude-code",
+        "runtime",
+        "mcp",
+        "memory"
+      ],
+      "category": "developer-tools",
+      "tags": [
+        "claude",
+        "plugin",
+        "productivity"
+      ]
     }
   ]
 }
