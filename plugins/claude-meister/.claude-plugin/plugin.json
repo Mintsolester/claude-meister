@@ -1,0 +1,25 @@
+{
+  "name": "claude-meister",
+  "description": "Runtime intelligence layer for Claude Code with mode routing, memory scoring, and optional offline wiki support.",
+  "version": "1.4.0",
+  "author": {
+    "name": "Mintsolester",
+    "email": "Mintsolester@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "runtime",
+    "mcp",
+    "memory",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/Mintsolester/claude-meister",
+  "repository": "https://github.com/Mintsolester/claude-meister",
+  "skills": [
+    "install-claude-meister",
+    "verify-claude-meister",
+    "configure-claude-meister",
+    "troubleshoot-claude-meister"
+  ]
+}
