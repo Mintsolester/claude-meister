@@ -1,0 +1,36 @@
+name: Plugin Validation
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  validate-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Claude Code CLI
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+
+      - name: Ensure claude is on PATH
+        shell: bash
+        run: |
+          if ! command -v claude >/dev/null 2>&1; then
+            if [ -x "$HOME/.local/bin/claude" ]; then
+              echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+            fi
+          fi
+
+      - name: Show Claude CLI version
+        run: |
+          claude --version
+
+      - name: Validate marketplace and plugin manifests
+        run: |
+          claude plugin validate .
+          claude plugin validate plugins/claude-meister

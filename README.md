@@ -24,17 +24,18 @@ Claude_Meister is a lightweight runtime layer that makes Claude Code smarter, ch
 
 1. [Why Claude_Meister?](#why-claude_meister)
 2. [Quick Start](#quick-start)
-3. [Detailed Installation Guide](#detailed-installation-guide)
-4. [How It Works](#how-it-works)
-5. [Example Walkthroughs](#example-walkthroughs)
-6. [Configuration](#configuration)
-7. [Commands Reference](#commands-reference)
-8. [Updating](#updating)
-9. [Uninstalling](#uninstalling)
-10. [Troubleshooting](#troubleshooting)
-11. [FAQ](#faq)
-12. [Contributing](#contributing)
-13. [License & Credits](#license--credits)
+3. [Plugin Install and Distribution](#plugin-install-and-distribution)
+4. [Detailed Installation Guide](#detailed-installation-guide)
+5. [How It Works](#how-it-works)
+6. [Example Walkthroughs](#example-walkthroughs)
+7. [Configuration](#configuration)
+8. [Commands Reference](#commands-reference)
+9. [Updating](#updating)
+10. [Uninstalling](#uninstalling)
+11. [Troubleshooting](#troubleshooting)
+12. [FAQ](#faq)
+13. [Contributing](#contributing)
+14. [License & Credits](#license--credits)
 
 ---
 
@@ -96,6 +97,35 @@ python install.py --verify
 Then restart Claude Code. That is it.
 
 Not sure what any of those commands mean? Read the [Detailed Installation Guide](#detailed-installation-guide) below — it walks through every step with screenshots and expected output.
+
+---
+
+## Plugin Install and Distribution
+
+If you want to use Claude_Meister as a plugin through Claude Code marketplaces:
+
+```bash
+# 1. Add this repository as a marketplace
+claude plugin marketplace add Mintsolester/claude-meister
+
+# 2. Install the plugin from this marketplace
+claude plugin install claude-meister@claude-meister-marketplace
+```
+
+For local plugin development and testing without marketplace install:
+
+```bash
+claude --plugin-dir ./plugins/claude-meister
+```
+
+Before publishing plugin changes, run validation locally:
+
+```bash
+claude plugin validate .
+claude plugin validate plugins/claude-meister
+```
+
+For official public listing, submit the plugin using Claude.ai or Console plugin submission forms.
 
 ---
 
