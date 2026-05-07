@@ -6,10 +6,14 @@ import sys
 from pathlib import Path
 
 
-def register_mcp(paths: dict) -> dict:
+def register_mcp(paths: dict, python_override: str = "") -> dict:
     """Register the memory MCP server with Claude Code.
 
-    Runs: claude mcp add memory -- python <path>/server/main.py
+    Runs: claude mcp add memory -- <python_abs_path> <memory_root>/server/main.py
+
+    Always uses an absolute interpreter path (sys.executable, an mcp-bearing
+    candidate, or python_override) so the registration is not subject to the
+    user's PATH at MCP launch time.
     """
     claude_path = shutil.which("claude")
     if not claude_path:
@@ -23,38 +27,71 @@ def register_mcp(paths: dict) -> dict:
             ),
         }
 
-    # Check if 'memory' already registered
-    existing = check_mcp()
-    if existing.get("registered"):
-        current_path = existing.get("path", "")
-        expected_path = f"{paths['memory_root']}/server/main.py"
-        # Normalize separators for cross-platform comparison (CLI may emit backslashes on Windows)
-        if expected_path in current_path.replace("\\", "/"):
-            return {"status": "skipped", "message": "Memory MCP server already registered with correct path."}
-        else:
+    expected_script = f"{paths['memory_root']}/server/main.py"
+
+    # Pick the interpreter we want to use
+    if python_override:
+        python_path = python_override
+        # Verify the override actually has mcp
+        try:
+            proc = subprocess.run(
+                [python_path, "-c", "import mcp"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if proc.returncode != 0:
+                return {
+                    "status": "error",
+                    "message": f"--python override {python_path} does not have 'mcp' installed.",
+                }
+        except Exception as e:
+            return {"status": "error", "message": f"--python override unusable: {e}"}
+    else:
+        python_path = get_python_with_mcp()
+        if not python_path:
             return {
-                "status": "conflict",
+                "status": "error",
                 "message": (
-                    f"An MCP server named 'memory' is already registered:\n"
-                    f"  Current: {current_path}\n"
-                    f"  Expected: {expected_path}\n"
-                    f"  To replace, run:\n"
-                    f"    claude mcp remove memory\n"
-                    f"    claude mcp add memory -- python \"{expected_path}\""
+                    "Could not find a Python installation with the 'mcp' package.\n"
+                    "Run: pip install mcp\n"
+                    "Then re-run the installer."
                 ),
             }
 
-    # Find python with mcp installed
-    python_path = get_python_with_mcp()
-    if not python_path:
-        return {
-            "status": "error",
-            "message": (
-                "Could not find a Python installation with the 'mcp' package.\n"
-                "Run: pip install mcp fastmcp\n"
-                "Then re-run the installer."
-            ),
-        }
+    # Check if 'memory' already registered, and whether it matches what we want
+    existing = check_mcp()
+    if existing.get("registered"):
+        current_cmd = existing.get("path", "")
+        current_norm = current_cmd.replace("\\", "/")
+        script_matches = expected_script in current_norm
+        # Bare-token check: registered command uses bare `python` rather than abs path
+        is_bare_python = " python " in f" {current_norm} " or current_norm.endswith(" python")
+        interp_matches = python_path.replace("\\", "/") in current_norm
+
+        if script_matches and interp_matches:
+            return {"status": "skipped", "message": "Memory MCP server already registered with correct interpreter and path."}
+
+        if script_matches and is_bare_python and not interp_matches:
+            # Registered with bare `python` — upgrade to absolute interpreter path
+            rm = subprocess.run(["claude", "mcp", "remove", "memory"], capture_output=True, text=True, timeout=15)
+            if rm.returncode != 0:
+                return {
+                    "status": "error",
+                    "message": f"Failed to remove stale 'memory' registration: {rm.stderr.strip() or rm.stdout.strip()}",
+                }
+            # Fall through to re-register below
+
+        elif not script_matches:
+            return {
+                "status": "conflict",
+                "message": (
+                    f"An MCP server named 'memory' is already registered with a different script:\n"
+                    f"  Current: {current_cmd}\n"
+                    f"  Expected: {expected_script}\n"
+                    f"  To replace, run:\n"
+                    f"    claude mcp remove memory\n"
+                    f"    claude mcp add memory -- \"{python_path}\" \"{expected_script}\""
+                ),
+            }
 
     cmd = build_mcp_command(paths, python_path)
     try:

@@ -106,7 +106,7 @@ def interactive_install():
     do_install(paths, install_mode)
 
 
-def do_install(paths: dict, mode: str):
+def do_install(paths: dict, mode: str, python_override: str = ""):
     """Execute installation for the given mode."""
     print(f"\n  Installing ({mode})...\n")
 
@@ -185,7 +185,7 @@ def do_install(paths: dict, mode: str):
     # MCP registration
     if mode in ("full", "memory-only"):
         print("  [5/5] Registering MCP server...")
-        result = register_mcp(paths)
+        result = register_mcp(paths, python_override=python_override)
         print(f"         {result['message']}")
         results.append(("MCP", result))
 
@@ -437,6 +437,8 @@ def main():
     parser.add_argument("--uninstall", action="store_true", help="Remove everything")
     parser.add_argument("--verify", action="store_true", help="Post-install health check")
     parser.add_argument("--stats", action="store_true", help="Usage dashboard")
+    parser.add_argument("--python", default="", metavar="PATH",
+                        help="Absolute Python interpreter path to register the MCP server under (overrides auto-detect).")
     parser.add_argument("--inject-here", action="store_true",
                         help="Inject runtime block into ./CLAUDE.md in the current directory")
 
@@ -459,13 +461,13 @@ def main():
     elif args.stats:
         do_stats(paths)
     elif args.full:
-        do_install(paths, "full")
+        do_install(paths, "full", python_override=args.python)
     elif args.runtime_only:
-        do_install(paths, "runtime-only")
+        do_install(paths, "runtime-only", python_override=args.python)
     elif args.memory_only:
-        do_install(paths, "memory-only")
+        do_install(paths, "memory-only", python_override=args.python)
     elif args.wiki_only:
-        do_install(paths, "wiki-only")
+        do_install(paths, "wiki-only", python_override=args.python)
     elif args.no_wiki:
         # Full minus wiki: install runtime, memory, claude_md, mcp
         subs = build_substitutions(paths)
@@ -479,7 +481,7 @@ def main():
         print("  [1/4] Runtime..."); r = install_runtime(paths, subs); print(f"         {r['message']}")
         print("  [2/4] Memory..."); r = install_memory(paths); print(f"         {r['message']}")
         print("  [3/4] CLAUDE.md..."); r = setup_claude_md(paths, subs); print(f"         {r['message']}")
-        print("  [4/4] MCP..."); r = register_mcp(paths); print(f"         {r['message']}")
+        print("  [4/4] MCP..."); r = register_mcp(paths, python_override=args.python); print(f"         {r['message']}")
         print("\n  Done! Run --verify to check installation.")
     else:
         interactive_install()

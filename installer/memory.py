@@ -7,6 +7,28 @@ import sys
 from pathlib import Path
 
 
+def install_dependencies(source_dir: Path) -> dict:
+    """Install Python packages from requirements.txt into the active interpreter.
+
+    The MCP server is launched via bare `python` by Claude Code, which resolves
+    to sys.executable here — so installing into sys.executable is what the server
+    will actually see at runtime.
+    """
+    req = source_dir / "requirements.txt"
+    if not req.exists():
+        return {"status": "skipped", "message": "No requirements.txt found"}
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", str(req)],
+            capture_output=True, text=True, timeout=180,
+        )
+        if proc.returncode != 0:
+            return {"status": "error", "message": f"pip install failed: {proc.stderr.strip()[:400]}"}
+        return {"status": "success", "message": "Dependencies installed"}
+    except Exception as e:
+        return {"status": "error", "message": f"pip install raised: {e}"}
+
+
 def install_memory(paths: dict) -> dict:
     """Copy memory/server/ to ~/.claude_memory/server/, create index.json if missing.
 
@@ -23,6 +45,10 @@ def install_memory(paths: dict) -> dict:
 
     if not source_dir.exists():
         return {"status": "error", "message": f"Source directory not found: {source_dir}"}
+
+    dep_result = install_dependencies(source_dir)
+    if dep_result["status"] == "error":
+        return {"status": "error", "message": f"Dependency install failed: {dep_result['message']}"}
 
     files_copied = 0
 
@@ -50,7 +76,7 @@ def install_memory(paths: dict) -> dict:
             "status": "success",
             "files_copied": files_copied,
             "target": str(server_dir),
-            "message": f"Memory server installed to {server_dir} ({files_copied} files)",
+            "message": f"Memory server installed to {server_dir} ({files_copied} files, deps: {dep_result['status']})",
         }
 
     except PermissionError as e:
