@@ -339,12 +339,61 @@ def do_stats(paths: dict):
     total = len(entries)
     modes = {}
     memory_tokens = []
+    measured_saved = 0
+    measured_count = 0
+    legacy_saved = 0
+
+    # Keep in sync with runtime/controllers/usage_logger.py for legacy backfill.
+    component_costs = {
+        "context_router": 495,
+        "mode_selector": 451,
+        "skill_router": 395,
+        "token_budget": 397,
+        "wiki": 641,
+        "wiki_hot": 185,
+        "tool_discovery": 500,
+        "skill": 800,
+        "advisor": 200,
+    }
+    memory_component_names = {"memory", "local_memory", "global_memory", "mcp_memory"}
+    baseline_tokens = 5879
+
+    def legacy_tokens_loaded(entry: dict) -> int:
+        comps = entry.get("components_loaded", [])
+        if not isinstance(comps, list):
+            comps = []
+        static = sum(
+            component_costs.get(c, 0)
+            for c in comps
+            if c not in memory_component_names
+        )
+        mt = entry.get("memory_tokens", 0)
+        try:
+            mt = int(mt or 0)
+        except (TypeError, ValueError):
+            mt = 0
+        return static + max(0, mt)
+
     for e in entries:
         mode = e.get("mode", "unknown")
         modes[mode] = modes.get(mode, 0) + 1
         mt = e.get("memory_tokens", 0)
         if mt:
             memory_tokens.append(mt)
+
+        # Prefer measured values if present (new log schema).
+        if "tokens_saved" in e:
+            try:
+                measured_saved += max(0, int(e.get("tokens_saved", 0) or 0))
+                measured_count += 1
+            except (TypeError, ValueError):
+                pass
+        else:
+            # Legacy logs: derive if components are present, else fallback to old LIGHT estimate.
+            if "components_loaded" in e:
+                legacy_saved += max(0, baseline_tokens - legacy_tokens_loaded(e))
+            elif mode == "LIGHT":
+                legacy_saved += 600
 
     light_count = modes.get("LIGHT", 0)
 
@@ -362,7 +411,16 @@ def do_stats(paths: dict):
 
     if light_count:
         print(f"  Tasks skipping runtime: {light_count} ({light_count*100//total}%)")
-        print(f"\n  Estimated savings:      ~{light_count * 600:,} tokens saved by LIGHT mode")
+
+    combined_saved = measured_saved + legacy_saved
+    print(f"\n  Token Savings")
+    print(f"  {'-' * 45}")
+    print(f"  Saved tokens (total):   {combined_saved:,}")
+    if measured_count:
+        print(f"  Measured savings:       {measured_saved:,}  ({measured_count} tasks)")
+    if legacy_saved:
+        print(f"  Legacy-estimated:       {legacy_saved:,}  ({total - measured_count} tasks)")
+    print(f"  Avg saved / task:       {combined_saved / total:.1f}")
 
 
 def main():
