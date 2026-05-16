@@ -27,3 +27,6 @@ venv/
 # Runtime artifacts (these are generated at install time, not shipped)
 logs/
 *.log
+
+# Meister conversation log — captures live user prompts, never commit
+.repo_memory/

@@ -6,6 +6,44 @@ Claude_Meister is a lightweight runtime layer that makes Claude Code smarter, ch
 
 ---
 
+## New in v2: `meister` — cross-tool conversation memory
+
+The same conversation memory, available from Claude Code, Cursor, Codex, Aider, or your shell. Captures every turn into a repo-local `.repo_memory/conversation.jsonl`, then surfaces it back with **layered retrieval** — so recall costs ~50 tokens, not 5,000.
+
+**30-second demo:**
+
+```bash
+# One-time install (writes capture hooks to ~/.claude/settings.json)
+python -m meister install-hooks
+
+# ...work in Claude Code as usual. Hooks silently capture every turn.
+
+# Next day, in any repo:
+$ python -m meister last
+Last 1 session(s) in ~/your-repo:
+
+  s_1715692800  2026-05-14 18:42  events=12  tools=[Edit:5,Bash:3,Read:4]
+                files: db/repository.py, tests/test_repo.py
+                title: fix the dedup bug in batch_insert_personas
+
+# Find a past session by topic:
+$ python -m meister recall "auth middleware"
+# Drill in:
+$ python -m meister show s_1715692800
+```
+
+**Why this is different from CLAUDE.md or built-in memory:**
+
+- **Platform-agnostic.** Same `.repo_memory/` works whether you used Claude Code, Cursor, or a shell-only client. Your memory follows the repo, not the tool.
+- **Layered retrieval (L0 → L1 → L2).** Default recall returns one-line session titles. Drill in only when you need the detail. The recall cost stays bounded as your history grows.
+- **Repo-local.** The log lives in `your-repo/.repo_memory/`. Commit it, gitignore it, sync it with the repo — your call.
+- **Zero embedding install.** Pure TF-IDF over events. No vector DB, no model download, no daemon. ~400 LOC. Upgrade to embedded recall later via the MCP server if you want.
+- **Fails open.** Capture hooks swallow all errors. They never block your tool calls.
+
+Full reference: [`docs/MEISTER_CLI.md`](docs/MEISTER_CLI.md).
+
+---
+
 ## Before / After
 
 | Scenario | Without Claude_Meister | With Claude_Meister | Difference |
