@@ -3,6 +3,41 @@
 All notable changes to Claude_Meister are documented here. This project
 follows [Semantic Versioning](https://semver.org/).
 
+## v2.0.0 — 2026-05-17
+
+The "memory follows the repo, not the tool" release. v2.0 introduces a
+human-facing CLI (`meister`) over the existing memory store and seeds it from
+git history so first-run is never empty.
+
+### Added
+- **`meister` CLI** — platform-independent surface over the conversation memory
+  store. Commands: `init`, `last`, `recall`, `show`, `status`, `install-hooks`,
+  `backfill`, `doctor`. Same memory works from Claude Code, Cursor, Codex,
+  Aider, or your shell.
+- **Capture hooks** (`UserPromptSubmit` + `PostToolUse` + `Stop`) that append a
+  turn record to repo-local `.repo_memory/conversation.jsonl`. Fail-open: any
+  exception is swallowed, hooks never block tool execution.
+- **Layered retrieval** — L0 one-line session titles → L1 expanded session
+  detail → L2 raw event stream. Recall cost stays bounded as history grows.
+- **Git-history backfill** — `install-hooks` (and standalone `meister backfill`)
+  synthesizes one session per recent non-merge commit so first-run is never
+  empty. Idempotent on re-run.
+- **Noise filter** — capture skips Claude Code's internal scratch paths
+  (`AppData/Temp/claude`, `~/.claude/projects/`, `/tmp/claude`).
+- `docs/MEISTER_CLI.md` — full CLI reference and event schema.
+
+### Changed
+- README hero section now leads with the cross-tool wedge, positioning Meister
+  as a memory layer that follows the repo, not the tool.
+- `.gitignore` now excludes `.repo_memory/` — the live conversation log
+  contains user prompts and must not ship with any repo.
+
+### Security
+- Capture hooks apply a regex scrubber on `api_key|token|secret|password`
+  patterns before writing summaries to disk. This is not a comprehensive
+  secret scanner. If your repo handles credentials, gitignore `.repo_memory/`
+  or run a real scanner before committing.
+
 ## v1.4.0 — 2026-04-19
 
 ### Added
