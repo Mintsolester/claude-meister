@@ -130,6 +130,12 @@ def _hook_command(event: str) -> str:
     return f'"{py}" -c "import sys; sys.path.insert(0, r\'{repo}\'); from meister.capture import main; raise SystemExit(main([\'{event}\']))"'
 
 
+def _module_command(module: str) -> str:
+    py = sys.executable.replace("\\", "/")
+    repo = Path(__file__).resolve().parent.parent.as_posix()
+    return f'"{py}" -c "import sys; sys.path.insert(0, r\'{repo}\'); from meister.{module} import main; raise SystemExit(main())"'
+
+
 def cmd_install_hooks(args: argparse.Namespace) -> int:
     """Idempotently add capture hooks to ~/.claude/settings.json.
 
@@ -157,6 +163,7 @@ def cmd_install_hooks(args: argparse.Namespace) -> int:
         ("UserPromptSubmit", None, _hook_command("prompt")),
         ("PostToolUse", "*", _hook_command("tool")),
         ("Stop", None, _hook_command("stop")),
+        ("SessionStart", None, _module_command("session_inject")),
     ]
     added = []
     for event, matcher, cmd in plan:
@@ -177,11 +184,17 @@ def cmd_install_hooks(args: argparse.Namespace) -> int:
         entries.append(entry)
         added.append(event)
 
+    # Wire the status line — visible health signal in the Claude Code footer.
+    statusline_cmd = _module_command("statusline")
+    if data.get("statusLine", {}).get("command") != statusline_cmd:
+        data["statusLine"] = {"type": "command", "command": statusline_cmd}
+        added.append("statusLine")
+
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     if added:
-        print(f"OK  installed hooks: {', '.join(added)}")
+        print(f"OK  installed: {', '.join(added)}")
     else:
-        print("OK  hooks already installed (no change)")
+        print("OK  hooks + statusLine already installed (no change)")
     print(f"    settings: {path}")
 
     # Killer first-run: seed memory from git so `meister last` isn't empty.
@@ -270,6 +283,24 @@ def build_parser() -> argparse.ArgumentParser:
     bf.set_defaults(func=cmd_backfill)
 
     sub.add_parser("doctor", help="Verify install").set_defaults(func=cmd_doctor)
+
+    def _run_selftest(_a: argparse.Namespace) -> int:
+        from . import selftest
+        return selftest.main()
+
+    sub.add_parser(
+        "test",
+        help="Self-test: capture, recall, hooks, token math (run after install-hooks)",
+    ).set_defaults(func=_run_selftest)
+
+    def _run_statusline(_a: argparse.Namespace) -> int:
+        from . import statusline
+        return statusline.main()
+
+    sub.add_parser(
+        "statusline",
+        help="Print the status-line text (used by Claude Code statusLine config)",
+    ).set_defaults(func=_run_statusline)
 
     return p
 
