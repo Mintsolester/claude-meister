@@ -13,13 +13,18 @@ The same conversation memory, available from Claude Code, Cursor, Codex, Aider, 
 **30-second demo:**
 
 ```bash
-# One-time install (writes capture hooks to ~/.claude/settings.json)
-python -m meister install-hooks
+# One-time install (makes the `meister` command globally available)
+git clone https://github.com/Mintsolester/claude-meister
+cd claude-meister && pip install -e .
 
-# ...work in Claude Code as usual. Hooks silently capture every turn.
+# Wire the capture hooks + statusLine + SessionStart injection
+meister install-hooks
+
+# ...work in Claude Code as usual. Hooks silently capture every turn,
+# and the new session footer shows live capture state in real time.
 
 # Next day, in any repo:
-$ python -m meister last
+$ meister last
 Last 1 session(s) in ~/your-repo:
 
   s_1715692800  2026-05-14 18:42  events=12  tools=[Edit:5,Bash:3,Read:4]
@@ -27,9 +32,12 @@ Last 1 session(s) in ~/your-repo:
                 title: fix the dedup bug in batch_insert_personas
 
 # Find a past session by topic:
-$ python -m meister recall "auth middleware"
+$ meister recall "auth middleware"
 # Drill in:
-$ python -m meister show s_1715692800
+$ meister show s_1715692800
+
+# Verify everything works on your machine:
+$ meister test
 ```
 
 **Why this is different from CLAUDE.md or built-in memory:**

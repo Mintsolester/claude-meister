@@ -8,14 +8,22 @@ support MCP yet.
 ## Install
 
 ```bash
-# 1) Capture hooks (Claude Code only — wires UserPromptSubmit, PostToolUse, Stop)
-python -m meister install-hooks
+# 1) Clone + install (makes `meister` a global console command)
+git clone https://github.com/Mintsolester/claude-meister
+cd claude-meister && pip install -e .
 
-# 2) Reload — open /hooks once in Claude Code, or restart the session.
+# 2) Capture hooks + SessionStart inject + statusLine — all in one
+meister install-hooks
 
-# 3) Verify
-python -m meister doctor
+# 3) Restart Claude Code (or open /hooks once) so the watcher reloads.
+
+# 4) Verify
+meister test     # programmatic 4/4 PASS check
+meister doctor   # hook wiring sanity check
 ```
+
+After `pip install -e .` you can use either `meister <cmd>` or
+`python -m meister <cmd>` — both work, from any directory.
 
 On non-Claude clients there is nothing to install: the `meister` CLI reads
 `.repo_memory/conversation.jsonl` directly. If the file is empty because the

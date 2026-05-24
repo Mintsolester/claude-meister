@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "claude-meister"
+version = "2.0.0"
+description = "Cross-tool conversation memory for AI coding agents. MCP + CLI. Layered retrieval."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Mintsolester" }]
+keywords = ["claude", "claude-code", "cursor", "mcp", "ai-tools", "memory", "developer-tools", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+# Zero runtime dependencies by design. The CLI uses only the standard library.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Mintsolester/claude-meister"
+Repository = "https://github.com/Mintsolester/claude-meister"
+Issues = "https://github.com/Mintsolester/claude-meister/issues"
+Changelog = "https://github.com/Mintsolester/claude-meister/blob/master/CHANGELOG.md"
+
+[project.scripts]
+meister = "meister.cli:main"
+
+[tool.setuptools]
+# Only ship the meister/ package — v1's runtime/, memory/server/, etc.
+# are not pip-distributed in v2.0. Users who want them can clone the repo.
+packages = ["meister"]

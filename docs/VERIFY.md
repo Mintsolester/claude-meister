@@ -12,9 +12,14 @@ thing works, or a precise list of what's broken.
 These run in-process. If any FAIL, fix before proceeding.
 
 ```bash
+# First time only — install meister so the `meister` command is on PATH:
+git clone https://github.com/Mintsolester/claude-meister
+cd claude-meister && pip install -e .
+
+# Then in YOUR repo (not the claude-meister repo):
 cd <your-repo>
-python -m meister install-hooks      # also wires SessionStart + statusLine
-python -m meister test
+meister install-hooks      # wires capture + SessionStart inject + statusLine
+meister test               # 4/4 PASS check
 ```
 
 Expected output:
