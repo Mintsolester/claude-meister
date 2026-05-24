@@ -46,46 +46,53 @@ def _cwd_from_payload(payload: dict) -> Path | None:
     return Path(cwd) if cwd else None
 
 
-# Memory-ish phrases: if a prompt contains any of these (case-insensitive),
-# we auto-run a recall and inject the result into Claude's context BEFORE
-# it sees the user prompt. This is the third leg of passive use — without
-# it, mid-conversation recall requires the user to ask Claude to use meister.
-_MEMORY_TRIGGERS = re.compile(
-    r"\b("
-    r"what did (i|we)|"
-    r"when did (i|we)|"
-    r"last time|"
-    r"yesterday|"
-    r"earlier|"
-    r"previously|"
-    r"remember when|"
-    r"remind me|"
-    r"what was i working on|"
-    r"what were we doing|"
-    r"where did i|"
-    r"have i (already|ever)"
-    r")\b",
-    re.IGNORECASE,
-)
+# Ambient context injection: on EVERY user prompt, run a recall against the
+# prompt text and inject the most-relevant past session(s) into Claude's view
+# BEFORE Claude reads the prompt. The user never needs to ask for memory —
+# Claude just has the right context to do the task correctly.
+#
+# Why no memory-cue regex anymore: the user has better memory than the model;
+# they don't need help recalling. The model is the one that needs context to
+# do new work that builds on past work. So inject on every prompt, not just
+# when the user phrases a memory question.
+#
+# Bounded: caps total injected length, uses TF-IDF score-gate so unrelated
+# prompts don't pull in random past sessions. If no past session shares any
+# terms with the prompt, nothing is injected.
 _AUTO_INJECT_OPT_OUT = "MEISTER_NO_AUTO_INJECT"
+_MIN_PROMPT_CHARS_FOR_INJECT = 8  # skip "ok", "yes", "thanks", etc.
+_MAX_INJECT_CHARS = 600
 
 
-def _maybe_auto_inject(prompt_text: str, repo_root) -> str:
-    """If the prompt looks memory-ish, run a recall and return a context block
-    to inject. Empty string = don't inject."""
+def _maybe_auto_inject(prompt_text: str, repo_root, current_session: str | None) -> str:
+    """Always-on ambient context injection. Returns the context block to
+    inject, or empty string if no relevant past session exists.
+
+    Behavior:
+      - Skips trivially-short prompts (acknowledgments like "ok", "go ahead")
+      - Runs TF-IDF recall on the prompt text against captured sessions
+      - Filters out the CURRENT session (we don't inject the prompt back at
+        Claude — that's noise, not signal)
+      - If no past session has term overlap, nothing is injected
+      - Otherwise returns top 2 past sessions, capped at MAX_INJECT_CHARS total
+    """
     import os
     if os.environ.get(_AUTO_INJECT_OPT_OUT) in ("1", "true", "yes"):
         return ""
-    if not _MEMORY_TRIGGERS.search(prompt_text):
+    if len(prompt_text.strip()) < _MIN_PROMPT_CHARS_FOR_INJECT:
         return ""
 
     from . import retrieve
-    # Run recall on the prompt (the TF-IDF surfaces what's relevant from the
-    # nouns/verbs in the question itself).
-    rows = retrieve.recall(prompt_text, repo_root=repo_root, top_k=3, trigger="prompt_auto")
+    # Pull a few extra in case the current session is among them and we filter
+    # it out.
+    rows = retrieve.recall(prompt_text, repo_root=repo_root, top_k=5, trigger="prompt_auto")
+    if current_session:
+        rows = [r for r in rows if r.get("session") != current_session]
+    rows = rows[:2]
     if not rows:
         return ""
-    lines = ["[meister auto-recall — your prompt looks like a memory question]"]
+
+    lines = ["[meister context — past sessions relevant to this prompt]"]
     for r in rows:
         ts = (r.get("ts_last") or "")[:10]
         title = (r.get("title") or "").strip()[:120]
@@ -94,8 +101,10 @@ def _maybe_auto_inject(prompt_text: str, repo_root) -> str:
         if files:
             line += f"  (files: {files})"
         lines.append(line)
-    lines.append("Use `meister show <session>` for full detail.")
-    return "\n".join(lines)
+    text = "\n".join(lines)
+    if len(text) > _MAX_INJECT_CHARS:
+        text = text[: _MAX_INJECT_CHARS - 3] + "..."
+    return text
 
 
 def on_user_prompt() -> None:
@@ -104,21 +113,24 @@ def on_user_prompt() -> None:
     if not text:
         return
     repo_root = store.find_repo_root(str(_cwd_from_payload(p)) if _cwd_from_payload(p) else None)
+    current_session = store.session_id(p.get("session_id"))
 
-    # 1) Always capture the prompt.
+    # ORDER MATTERS:
+    # 1) Run the ambient-context recall FIRST, against everything captured so
+    #    far. We must do this before appending the current prompt, otherwise
+    #    the prompt becomes its own top match.
+    # 2) Then capture the current prompt to the log.
+    ctx = _maybe_auto_inject(text, repo_root, current_session)
+
     store.append(
         {
             "kind": "prompt",
             "ts": store.now_iso(),
-            "session": store.session_id(p.get("session_id")),
+            "session": current_session,
             "text": store.safe_summary(text, 400),
         },
         repo_root,
     )
-
-    # 2) If it's a memory-ish question, auto-inject relevant past context
-    #    via the UserPromptSubmit hook's additionalContext channel.
-    ctx = _maybe_auto_inject(text, repo_root)
     if ctx:
         out = {
             "hookSpecificOutput": {

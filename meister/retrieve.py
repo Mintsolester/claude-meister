@@ -19,9 +19,22 @@ from . import store, usage
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
+# Stopwords stripped before scoring — they pollute Jaccard with high-frequency
+# noise. Kept small on purpose; we want to preserve technical vocabulary
+# ("the_arena_runner" stays). This is an English-only list — fine, because the
+# code identifiers we care about (functions, files) are usually English-rooted.
+_STOPWORDS = frozenset(
+    "a an and are as at be by for from has have how i if in is it its me my "
+    "of on or our that the their them these they this to was were what when "
+    "where which who why will with would you your".split()
+)
+
+# Below this Jaccard-derived score, treat the match as noise and drop it.
+_MIN_RECALL_SCORE = 0.05
+
 
 def _tokens(s: str) -> list[str]:
-    return [t.lower() for t in _TOKEN_RE.findall(s or "")]
+    return [t.lower() for t in _TOKEN_RE.findall(s or "") if t.lower() not in _STOPWORDS]
 
 
 def _score(query: str, document: str) -> float:
@@ -83,7 +96,7 @@ def recall(
             ]
         )
         s = _score(query, document)
-        if s > 0:
+        if s >= _MIN_RECALL_SCORE:
             scored.append((s, row))
     scored.sort(key=lambda x: x[0], reverse=True)
     out = [row for _, row in scored[:top_k]]
