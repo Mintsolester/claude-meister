@@ -16,7 +16,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import retrieve, store
+from . import retrieve, store, usage
 
 MAX_SESSIONS = 5
 MAX_CHARS = 800
@@ -62,6 +62,18 @@ def main() -> int:
         ctx = _build_context(root)
         if not ctx:
             return 0
+
+        # Log the auto-inject so `meister usage` can show it as a real use.
+        usage.log(
+            kind="auto_session",
+            trigger="session_start",
+            query=None,
+            result_count=min(MAX_SESSIONS, len(retrieve.l0_sessions(root))),
+            tokens_saved_est=max(0, (root / store.MEMORY_DIRNAME / store.CONVERSATION_FILE).stat().st_size // 4 - len(ctx) // 4)
+            if (root / store.MEMORY_DIRNAME / store.CONVERSATION_FILE).exists()
+            else 0,
+            repo_root=root,
+        )
 
         out = {
             "hookSpecificOutput": {

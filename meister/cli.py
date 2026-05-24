@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import backfill, retrieve, store
+from . import backfill, retrieve, store, usage
 
 
 def _fmt_session_row(row: dict) -> str:
@@ -96,6 +96,72 @@ def cmd_show(args: argparse.Namespace) -> int:
             print(f"  {c}")
     print(f"\nFull stream: python -m meister show {args.session} --raw")
     return 0
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Show how meister has actually been invoked in this repo and by whom.
+
+    This answers the user-facing question: 'is this thing actually being
+    used, or just sitting there capturing?'
+    """
+    from datetime import datetime, timezone, timedelta
+
+    rows = usage.read_all()
+    if not rows:
+        print("(no recorded invocations yet — meister hasn't been used in this repo)")
+        print("\nThings that count as a use:")
+        print("  - `meister recall/last/show` in a terminal")
+        print("  - SessionStart auto-injection (every new Claude Code session)")
+        print("  - UserPromptSubmit auto-recall on memory-ish prompts")
+        return 0
+
+    # Filter by window if requested.
+    now = datetime.now(timezone.utc)
+    if args.since_days > 0:
+        cutoff = now - timedelta(days=args.since_days)
+        rows = [r for r in rows if _row_dt(r) >= cutoff]
+
+    by_trigger: dict[str, int] = {}
+    by_kind: dict[str, int] = {}
+    total_saved = 0
+    for r in rows:
+        by_trigger[r.get("trigger", "?")] = by_trigger.get(r.get("trigger", "?"), 0) + 1
+        by_kind[r.get("kind", "?")] = by_kind.get(r.get("kind", "?"), 0) + 1
+        total_saved += int(r.get("tokens_saved_est", 0) or 0)
+
+    print(f"Meister usage — last {args.since_days} days" if args.since_days else "Meister usage — all time")
+    print(f"  Repo: {store.find_repo_root()}")
+    print()
+    print(f"  Total invocations:   {len(rows)}")
+    print(f"  Tokens saved (est):  {total_saved:,}")
+    print()
+    print("  By trigger:")
+    for trig, n in sorted(by_trigger.items(), key=lambda kv: -kv[1]):
+        print(f"    {trig:22} {n:5d}")
+    print()
+    print("  By kind:")
+    for kind, n in sorted(by_kind.items(), key=lambda kv: -kv[1]):
+        print(f"    {kind:22} {n:5d}")
+    print()
+    print(f"  Last {min(5, len(rows))} invocations:")
+    for r in rows[-5:]:
+        ts = r.get("ts", "")[:19].replace("T", " ")
+        q = (r.get("query") or "").strip()
+        q_disp = f"  q={q[:50]!r}" if q else ""
+        print(f"    {ts}  {r.get('kind', '?'):14} via {r.get('trigger', '?'):14}"
+              f"  results={r.get('result_count', 0)}{q_disp}")
+    return 0
+
+
+def _row_dt(r: dict):
+    from datetime import datetime, timezone
+    try:
+        dt = datetime.fromisoformat(r.get("ts", ""))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except Exception:
+        return datetime.fromtimestamp(0, timezone.utc)
 
 
 def cmd_stats(args: argparse.Namespace) -> int:
@@ -326,6 +392,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("status", help="Health + counts for this repo's memory").set_defaults(func=cmd_status)
     sub.add_parser("stats", help="Token-economics breakdown (saved tokens, recall cost vs naive)").set_defaults(func=cmd_stats)
+
+    usg = sub.add_parser("usage", help="How meister has actually been invoked (passive use is logged)")
+    usg.add_argument("--since-days", type=int, default=0, help="Only show invocations in the last N days (0 = all time)")
+    usg.set_defaults(func=cmd_usage)
 
     ih = sub.add_parser("install-hooks", help="Wire capture hooks into ~/.claude/settings.json (auto-seeds from git)")
     ih.add_argument("--no-backfill", action="store_true", help="Skip the git-history seed step")

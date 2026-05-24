@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from . import store
+from . import store, usage
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+")
 
@@ -50,7 +50,22 @@ def l0_sessions(repo_root: Path | None = None) -> list[dict]:
     return rows
 
 
-def recall(query: str, repo_root: Path | None = None, top_k: int = 5) -> list[dict]:
+def _estimate_tokens_saved(rows: list[dict], repo_root: Path | None) -> int:
+    """Compare the L0 cost we returned vs the full-log naive cost. Order of
+    magnitude only — uses 4 chars/token."""
+    log_path = store.memory_dir(repo_root) / store.CONVERSATION_FILE
+    naive = (log_path.stat().st_size // 4) if log_path.exists() else 0
+    l0 = max(1, sum(len(str(r.get("title", ""))) + len(",".join(r.get("files", []))) for r in rows) // 4)
+    return max(0, naive - l0)
+
+
+def recall(
+    query: str,
+    repo_root: Path | None = None,
+    top_k: int = 5,
+    *,
+    trigger: str = "cli",
+) -> list[dict]:
     """L0 layer: return top-k sessions matching `query`.
 
     Empty query returns the most recent sessions (the "last" command's fallback).
@@ -71,7 +86,16 @@ def recall(query: str, repo_root: Path | None = None, top_k: int = 5) -> list[di
         if s > 0:
             scored.append((s, row))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [row for _, row in scored[:top_k]]
+    out = [row for _, row in scored[:top_k]]
+    usage.log(
+        kind="recall",
+        trigger=trigger,
+        query=query,
+        result_count=len(out),
+        tokens_saved_est=_estimate_tokens_saved(out, repo_root),
+        repo_root=repo_root,
+    )
+    return out
 
 
 def expand_session(session: str, repo_root: Path | None = None) -> dict[str, Any]:

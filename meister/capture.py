@@ -13,7 +13,9 @@ import json
 import sys
 from pathlib import Path
 
-from . import store
+import re
+
+from . import store, usage
 
 # File paths that match these substrings are skipped — Claude Code's own
 # scratch directories produce a lot of internal Read/Bash noise that has no
@@ -44,11 +46,66 @@ def _cwd_from_payload(payload: dict) -> Path | None:
     return Path(cwd) if cwd else None
 
 
+# Memory-ish phrases: if a prompt contains any of these (case-insensitive),
+# we auto-run a recall and inject the result into Claude's context BEFORE
+# it sees the user prompt. This is the third leg of passive use — without
+# it, mid-conversation recall requires the user to ask Claude to use meister.
+_MEMORY_TRIGGERS = re.compile(
+    r"\b("
+    r"what did (i|we)|"
+    r"when did (i|we)|"
+    r"last time|"
+    r"yesterday|"
+    r"earlier|"
+    r"previously|"
+    r"remember when|"
+    r"remind me|"
+    r"what was i working on|"
+    r"what were we doing|"
+    r"where did i|"
+    r"have i (already|ever)"
+    r")\b",
+    re.IGNORECASE,
+)
+_AUTO_INJECT_OPT_OUT = "MEISTER_NO_AUTO_INJECT"
+
+
+def _maybe_auto_inject(prompt_text: str, repo_root) -> str:
+    """If the prompt looks memory-ish, run a recall and return a context block
+    to inject. Empty string = don't inject."""
+    import os
+    if os.environ.get(_AUTO_INJECT_OPT_OUT) in ("1", "true", "yes"):
+        return ""
+    if not _MEMORY_TRIGGERS.search(prompt_text):
+        return ""
+
+    from . import retrieve
+    # Run recall on the prompt (the TF-IDF surfaces what's relevant from the
+    # nouns/verbs in the question itself).
+    rows = retrieve.recall(prompt_text, repo_root=repo_root, top_k=3, trigger="prompt_auto")
+    if not rows:
+        return ""
+    lines = ["[meister auto-recall — your prompt looks like a memory question]"]
+    for r in rows:
+        ts = (r.get("ts_last") or "")[:10]
+        title = (r.get("title") or "").strip()[:120]
+        files = ", ".join((r.get("files") or [])[:3])
+        line = f"  [{ts}] {title}"
+        if files:
+            line += f"  (files: {files})"
+        lines.append(line)
+    lines.append("Use `meister show <session>` for full detail.")
+    return "\n".join(lines)
+
+
 def on_user_prompt() -> None:
     p = _read_payload()
     text = p.get("prompt") or p.get("user_prompt") or p.get("text") or ""
     if not text:
         return
+    repo_root = store.find_repo_root(str(_cwd_from_payload(p)) if _cwd_from_payload(p) else None)
+
+    # 1) Always capture the prompt.
     store.append(
         {
             "kind": "prompt",
@@ -56,8 +113,20 @@ def on_user_prompt() -> None:
             "session": store.session_id(p.get("session_id")),
             "text": store.safe_summary(text, 400),
         },
-        store.find_repo_root(str(_cwd_from_payload(p)) if _cwd_from_payload(p) else None),
+        repo_root,
     )
+
+    # 2) If it's a memory-ish question, auto-inject relevant past context
+    #    via the UserPromptSubmit hook's additionalContext channel.
+    ctx = _maybe_auto_inject(text, repo_root)
+    if ctx:
+        out = {
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": ctx,
+            }
+        }
+        sys.stdout.write(json.dumps(out))
 
 
 def on_post_tool() -> None:
