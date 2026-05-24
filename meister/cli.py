@@ -98,6 +98,59 @@ def cmd_show(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stats(args: argparse.Namespace) -> int:
+    """Detailed token-economics breakdown — the numbers behind the status line."""
+    root = store.find_repo_root()
+    d = store.memory_dir(root)
+    log = d / store.CONVERSATION_FILE
+    if not log.exists() or log.stat().st_size == 0:
+        print("(no events captured yet — use Claude Code with hooks installed)")
+        return 0
+
+    events = store.read_events(root)
+    rows = retrieve.l0_sessions(root)
+    size = log.stat().st_size
+
+    # 4 chars/token approximation, same as statusline.
+    naive_tokens = max(1, size // 4)
+
+    # Real measured L0 cost: serialize what `meister last -n N` would print.
+    def _l0_chars(n: int) -> int:
+        sel = rows[:n]
+        if not sel:
+            return 0
+        text = "\n".join(
+            f"{r['session']} {r['ts_last']} events={r['event_count']} "
+            f"tools={','.join(f'{k}:{v}' for k, v in r['tool_counts'].items())} "
+            f"files={','.join(r['files'][:3])} title={r['title']}"
+            for r in sel
+        )
+        return len(text)
+
+    l0_10 = _l0_chars(10) // 4
+    l0_all = _l0_chars(len(rows)) // 4
+
+    saved_per_recall = max(0, naive_tokens - l0_10)
+    saved_pct = int((saved_per_recall / naive_tokens) * 100) if naive_tokens else 0
+
+    print(f"Repo:       {root}")
+    print(f"Log file:   {log}  ({size / 1024:.1f} KB)")
+    print(f"Events:     {len(events)}")
+    print(f"Sessions:   {len(rows)}")
+    print()
+    print("Token economics  (4 chars/token approx):")
+    print(f"  Full log dumped naively into context:  ~{naive_tokens:>7,} tokens")
+    print(f"  `meister last` (default top 10):       ~{l0_10:>7,} tokens")
+    print(f"  `meister last -n {len(rows)}` (all sessions): ~{l0_all:>7,} tokens")
+    print()
+    print(f"  Saved per default recall: ~{saved_per_recall:,} tokens ({saved_pct}%)")
+    print()
+    print("Honest framing: 'saved' assumes the alternative is dumping the full")
+    print("conversation log into Claude's context every recall. If you never")
+    print("recall at all, the savings are unrealized.")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     root = store.find_repo_root()
     d = store.memory_dir(root)
@@ -272,6 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.set_defaults(func=cmd_show)
 
     sub.add_parser("status", help="Health + counts for this repo's memory").set_defaults(func=cmd_status)
+    sub.add_parser("stats", help="Token-economics breakdown (saved tokens, recall cost vs naive)").set_defaults(func=cmd_stats)
 
     ih = sub.add_parser("install-hooks", help="Wire capture hooks into ~/.claude/settings.json (auto-seeds from git)")
     ih.add_argument("--no-backfill", action="store_true", help="Skip the git-history seed step")
